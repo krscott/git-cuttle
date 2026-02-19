@@ -15,6 +15,8 @@ optional post-merge commits where you continue work.
   - Pull each parent branch from remote then run `absorb`.
 - `gitcuttle list`
   - List tracked workspaces.
+- `gitcuttle delete [workspace]`
+  - Delete persisted workspace metadata for the current (or named) workspace.
 - `gitcuttle status`
   - Show status for the current workspace branch.
 

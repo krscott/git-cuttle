@@ -81,3 +81,25 @@ def test_cli_new_list_status() -> None:
         )
         assert status_result.returncode == 0
         assert "workspace: ws" in status_result.stdout
+
+        delete_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert delete_result.returncode == 0
+        assert "deleted workspace metadata: ws" in delete_result.stdout
+
+        list_after_delete_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert list_after_delete_result.returncode == 0
+        assert "no workspaces" in list_after_delete_result.stdout

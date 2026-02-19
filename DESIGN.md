@@ -52,6 +52,8 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
   - Pulls each parent branch (`git pull --ff-only`) then runs absorb flow.
 - `gitcuttle list`
   - Lists all persisted workspaces.
+- `gitcuttle delete [workspace]`
+  - Removes workspace metadata/ref tracking without deleting git branches.
 - `gitcuttle status`
   - Shows current workspace and post-merge commit count.
 

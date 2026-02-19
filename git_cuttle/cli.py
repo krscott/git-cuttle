@@ -8,6 +8,7 @@ from git_cuttle.rebase import rebase_workspace_commits, update_workspace
 from git_cuttle.workspace import (
     count_post_merge_commits,
     create_workspace,
+    delete_workspace,
     get_workspace,
     list_workspaces,
 )
@@ -34,6 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     update_parser.add_argument(
         "--continue", dest="continue_rebase", action="store_true"
+    )
+
+    delete_parser = subparsers.add_parser("delete", help="delete workspace metadata")
+    delete_parser.add_argument(
+        "workspace",
+        nargs="?",
+        help="workspace name (defaults to current branch workspace)",
     )
 
     subparsers.add_parser("list", help="list workspaces")
@@ -90,6 +98,16 @@ def main(argv: list[str] | None = None) -> int:
                 raise GitCuttleError("current branch is not a gitcuttle workspace")
             update_workspace(current_workspace, continue_rebase=args.continue_rebase)
             print(f"workspace updated: {current_workspace.name}")
+            return 0
+
+        elif args.command == "delete":
+            target_workspace = (
+                get_workspace(args.workspace) if args.workspace else get_workspace()
+            )
+            if target_workspace is None:
+                raise GitCuttleError("workspace not found")
+            delete_workspace(target_workspace.name)
+            print(f"deleted workspace metadata: {target_workspace.name}")
             return 0
 
         elif args.command == "list":
