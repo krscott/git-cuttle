@@ -33,8 +33,14 @@ jobs:
     - name: Check Mypy
       run: nix run -L .#mypy
 
+    - name: Check Pyright
+      run: nix develop --command bash -c 'pyright .'
+
     - name: Check Develop Shell
       run: nix develop --command bash -c 'gitcuttle --help'
+
+    - name: Run Tests
+      run: nix develop --command bash -c 'python -m pytest'
 
     - name: Test and Build
       run: nix build -L
