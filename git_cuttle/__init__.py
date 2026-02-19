@@ -1,3 +1,3 @@
-from git_cuttle.lib import greet
+from git_cuttle.cli import main
 
-__all__ = ["greet"]
+__all__ = ["main"]

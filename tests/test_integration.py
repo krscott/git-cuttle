@@ -1,92 +1,83 @@
-"""Black-box integration tests for the CLI using subprocess.
-
-These tests invoke the CLI as a real process to verify the end-to-end user experience.
-"""
+from __future__ import annotations
 
 import os
 import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
 
-@pytest.mark.integration
-def test_cli_basic_argument() -> None:
-    """Test CLI with a basic name argument."""
-    result = subprocess.run(
-        ["gitcuttle", "Alice"],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert "Hello, Alice!" in result.stdout
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
 @pytest.mark.integration
-def test_cli_default_name() -> None:
-    """Test CLI with no arguments uses default name."""
-    result = subprocess.run(
-        ["gitcuttle"],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert "Hello, World!" in result.stdout
-
-
-@pytest.mark.integration
-def test_cli_verbose_flag() -> None:
-    """Test CLI with --verbose flag shows debug output."""
-    result = subprocess.run(
-        ["gitcuttle", "--verbose", "Bob"],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert "Hello, Bob!" in result.stdout
-    assert "Greeting user..." in result.stderr
-
-
-@pytest.mark.integration
-def test_cli_verbose_short_flag() -> None:
-    """Test CLI with -v short flag shows debug output."""
-    result = subprocess.run(
-        ["gitcuttle", "-v", "Charlie"],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert "Hello, Charlie!" in result.stdout
-    assert "Greeting user..." in result.stderr
-
-
-@pytest.mark.integration
-def test_cli_verbose_env_var() -> None:
-    """Test CLI with GITCUTTLE_VERBOSE environment variable."""
+def test_cli_new_list_status() -> None:
+    project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    env["GITCUTTLE_VERBOSE"] = "1"
-    result = subprocess.run(
-        ["gitcuttle", "David"],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert result.returncode == 0
-    assert "Hello, David!" in result.stdout
-    assert "Greeting user..." in result.stderr
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        repo = Path(tmp_dir) / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
 
-@pytest.mark.integration
-def test_cli_flag_overrides_env_var() -> None:
-    """Test that command line flag works even when env var is not set."""
-    env = os.environ.copy()
-    # Ensure the env var is not set
-    env.pop("GITCUTTLE_VERBOSE", None)
-    result = subprocess.run(
-        ["gitcuttle", "--verbose", "Eve"],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert result.returncode == 0
-    assert "Hello, Eve!" in result.stdout
-    assert "Greeting user..." in result.stderr
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        new_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "new",
+                "feature-a",
+                "feature-b",
+                "--name",
+                "ws",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert new_result.returncode == 0
+
+        list_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert list_result.returncode == 0
+        assert "ws" in list_result.stdout
+
+        status_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "status"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert status_result.returncode == 0
+        assert "workspace: ws" in status_result.stdout

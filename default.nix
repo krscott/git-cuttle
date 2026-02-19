@@ -1,9 +1,6 @@
 {
   buildPythonPackage,
   lib,
-  pytestCheckHook,
-  python-dotenv,
-  setproctitle,
   setuptools,
 }:
 buildPythonPackage {
@@ -13,17 +10,9 @@ buildPythonPackage {
 
   nativeBuildInputs = [ setuptools ];
 
-  propagatedBuildInputs = [
-    python-dotenv
-    setproctitle
-  ];
+  propagatedBuildInputs = [ ];
 
-  nativeCheckInputs = [
-    pytestCheckHook
-  ];
-
-  # Skip integration tests during build (they require the installed executable)
-  pytestFlagsArray = [ "-m 'not integration'" ];
+  doCheck = false;
 
   # pythonImportsCheck = [ "git_cuttle" ];
 

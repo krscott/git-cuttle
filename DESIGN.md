@@ -1,71 +1,64 @@
 # Design Document
 
-This document outlines the design, architecture, and components of the `git-cuttle` application. It serves as a comprehensive guide for understanding and reproducing the system's functionality.
-
 ## Overview
 
-`git-cuttle` is a Command Line Interface (CLI) application built with Python. It serves as a foundational template for Python projects, featuring structured argument parsing, environment variable configuration, type-safe code, and logging.
+`git-cuttle` provides a git-style CLI for building and maintaining multi-branch
+workspaces. A workspace is a branch created from an n-way merge of parent
+branches. Users can do post-merge work on that workspace branch, then later
+refresh the merge and rebase post-merge commits onto the refreshed result.
 
 ## Architecture
 
-The application follows a clean separation of concerns:
+1. **CLI layer** (`git_cuttle/cli.py`, `git_cuttle/__main__.py`)
+   - Parses subcommands and arguments.
+   - Performs user-facing error handling.
+2. **Git operations layer** (`git_cuttle/git_ops.py`)
+   - Thin, typed wrappers around `git` subprocess commands.
+3. **Workspace metadata layer** (`git_cuttle/workspace.py`)
+   - Immutable `WorkspaceConfig` model.
+   - Persistence and retrieval of workspace metadata.
+4. **Rebase orchestration layer** (`git_cuttle/rebase.py`)
+   - Recomputes merge commit and rebases workspace commits.
+   - Stores and restores interrupted rebase state.
 
-1.  **Entry Point (`__main__.py`)**: Handles CLI interaction, argument parsing, configuration loading, and application bootstrapping.
-2.  **Core Logic (`lib.py`)**: Contains the business logic and domain-specific functionality, independent of the CLI interface.
+## Data Model
 
-## Components
+- `WorkspaceConfig`
+  - `name`: workspace id.
+  - `branches`: parent branches included in the merge.
+  - `base_branch`: branch from which workspace was created.
+  - `merge_branch`: workspace branch name.
+- `RebaseState`
+  - `operation`: `"rebase"` or `"pull"`.
+  - `workspace_name`: workspace identifier.
+  - `original_head`: merge commit before refresh.
+  - `target_branch`: refreshed merge commit.
 
-### 1. CLI Entry Point
-*   **File**: `git_cuttle/__main__.py`
-*   **Function**: `main()`
-*   **Responsibilities**:
-    *   Sets the process title using `setproctitle`.
-    *   Loads environment variables from `.env` files using `python-dotenv`.
-    *   Parses command-line arguments.
-    *   Configures the logging system.
-    *   Invokes the core business logic.
+## Persistence
 
-### 2. Configuration & Argument Parsing
-*   **Mechanism**: `argparse` with a custom Action (`EnvAction`).
-*   **Features**:
-    *   Supports command-line flags (e.g., `-v`, `--verbose`).
-    *   Supports environment variable fallbacks (e.g., `GITCUTTLE_VERBOSE`).
-    *   `EnvAction` class handles the logic: CLI arg > Env Var > Default value.
-*   **Data Model**: `CliOpts` dataclass encapsulates all configuration options, ensuring type safety when passing settings around.
+- Workspace ref: `.git/refs/gitcuttle/<workspace-name>` (points to merge commit).
+- Workspace config: `.git/gitcuttle/workspaces/<workspace-name>.json`.
+- Rebase resume state: `.git/gitcuttle-rebase.json`.
 
-### 3. Core Logic
-*   **File**: `git_cuttle/lib.py`
-*   **Responsibilities**:
-    *   Implements the primary functionality (currently a greeting system).
-    *   Defines domain data models (e.g., `Options`).
-    *   Designed to be testable and reusable, decoupled from `argparse`.
+## Command Behavior
 
-### 4. Logging
-*   **Library**: Standard Python `logging`.
-*   **Configuration**: Configured in `main()` based on the verbosity flag.
-*   **Behavior**:
-    *   Default level: `INFO`.
-    *   Verbose level: `DEBUG`.
-    *   Uses a simple message format.
+- `gitcuttle new <branch...> [--name]`
+  - Creates a workspace branch and performs octopus merge of parents.
+  - Persists metadata and merge ref.
+- `gitcuttle absorb [--continue]`
+  - Recomputes parent merge on a temporary branch.
+  - Rebases post-merge commits onto refreshed merge.
+- `gitcuttle update [--continue]`
+  - Pulls each parent branch (`git pull --ff-only`) then runs absorb flow.
+- `gitcuttle list`
+  - Lists all persisted workspaces.
+- `gitcuttle status`
+  - Shows current workspace and post-merge commit count.
 
 ## Data Flow
 
-1.  User invokes the CLI (e.g., `gitcuttle World`).
-2.  `main()` initializes and loads environment variables.
-3.  `CliOpts.parse_args()` processes arguments and environment variables.
-4.  A `CliOpts` object is created, containing an `app_opts` (`Options`) instance and CLI-specific flags.
-5.  Logging is configured based on `CliOpts.verbose`.
-6.  `greet(cli_opts.app_opts)` is called, executing the core logic.
-7.  Output is printed to the console or logged.
-
-## Reproducibility Guide
-
-To reproduce this application, an agent should:
-
-1.  **Setup Project Structure**: Create `git_cuttle/` package and `tests/` directory.
-2.  **Define Dependencies**: Configure `pyproject.toml` with `python-dotenv` and `setproctitle`.
-3.  **Implement `EnvAction`**: Create the custom `argparse.Action` to support environment variable fallbacks.
-4.  **Create Data Models**: Define `Options` and `CliOpts` dataclasses for type-safe configuration.
-5.  **Implement Logic**: Write the core functionality in `lib.py`.
-6.  **Wire Entry Point**: specific `main()` function to orchestrate config, logging, and execution.
-7.  **Add Type Hints**: Ensure all code is strictly typed for `pyright` and `mypy` compliance.
+1. User runs a subcommand through `gitcuttle`.
+2. CLI resolves current workspace from current git branch when needed.
+3. Git layer runs required plumbing/porcelain operations.
+4. Workspace metadata is read/written under `.git` namespaces.
+5. For `absorb`/`update`, interrupted rebases persist state for `--continue`.

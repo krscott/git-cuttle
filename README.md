@@ -1,31 +1,35 @@
 # git-cuttle
 
-My rather opinionated Python project template.
+`git-cuttle` is a CLI for managing multi-branch git workspaces.
 
-To start a project with this template, run:
-```
-./init-template.sh new_project_name
-```
+A workspace is a branch that contains an n-way merge of parent branches, plus
+optional post-merge commits where you continue work.
 
-## Documentation Structure
+## Commands
 
-This repository contains several documentation files for different audiences:
+- `gitcuttle new <branch1> <branch2> ... [--name NAME]`
+  - Create a new workspace branch and perform an octopus merge.
+- `gitcuttle absorb [--continue]`
+  - Recompute the parent merge and rebase post-merge commits onto it.
+- `gitcuttle update [--continue]`
+  - Pull each parent branch from remote then run `absorb`.
+- `gitcuttle list`
+  - List tracked workspaces.
+- `gitcuttle status`
+  - Show status for the current workspace branch.
 
-- **README.md** - User-facing project documentation for developers using or deploying this project
-- [**AGENTS.md**](AGENTS.md) - Comprehensive development guidelines for AI agents,
-  including code style, conventions, and workflows
-  (Note: CLAUDE.md is symlinked to AGENTS.md in nix dev shell)
+## Metadata
+
+- Workspace refs are stored under `.git/refs/gitcuttle/<workspace-name>`.
+- Workspace config is stored under `.git/gitcuttle/workspaces/<workspace-name>.json`.
+- Interrupted rebase state is stored in `.git/gitcuttle-rebase.json`.
 
 ## Development
 
-Update dependencies
-```
-nix flake update
-```
-
-Start nix dev shell
-```
+```bash
 nix develop
+python -m pyright
+python -m mypy .
+python -m pytest
+./format.sh
 ```
-
-NOTE: If you rename scripts in pyproject.toml, you may need to delete and recreate .venv
