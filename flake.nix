@@ -28,7 +28,7 @@
           overlays = [ localOverlay ];
         };
 
-        pythonDev = pkgs.python3.pkgs.py-start.pythonModule.withPackages (
+        pythonDev = pkgs.python3.pkgs.git-cuttle.pythonModule.withPackages (
           ps:
           with ps;
           [
@@ -37,8 +37,8 @@
             mypy
             pytest
           ]
-          ++ pkgs.py-start.propagatedBuildInputs
-          ++ pkgs.py-start.nativeBuildInputs
+          ++ pkgs.git-cuttle.propagatedBuildInputs
+          ++ pkgs.git-cuttle.nativeBuildInputs
         );
 
         mkApp = text: {
@@ -54,13 +54,13 @@
       in
       {
         packages = {
-          inherit (pkgs) py-start;
-          default = pkgs.py-start;
+          inherit (pkgs) git-cuttle;
+          default = pkgs.git-cuttle;
         };
 
         devShells = {
           default = pkgs.mkShell {
-            inputsFrom = [ pkgs.py-start ];
+            inputsFrom = [ pkgs.git-cuttle ];
             nativeBuildInputs = [
               pythonDev
               pkgs.pyright

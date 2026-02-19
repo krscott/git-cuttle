@@ -7,7 +7,7 @@
   setuptools,
 }:
 buildPythonPackage {
-  name = "py-start";
+  name = "git-cuttle";
   src = lib.cleanSource ./.;
   pyproject = true;
 
@@ -25,10 +25,10 @@ buildPythonPackage {
   # Skip integration tests during build (they require the installed executable)
   pytestFlagsArray = [ "-m 'not integration'" ];
 
-  # pythonImportsCheck = [ "py_start" ];
+  # pythonImportsCheck = [ "git_cuttle" ];
 
   meta = {
-    mainProgram = "pystart";
+    mainProgram = "gitcuttle";
     # description = "A short description of my application";
     # homepage = "https://github.com";
     # license = lib.licenses.mit;

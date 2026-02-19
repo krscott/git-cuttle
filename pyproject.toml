@@ -1,5 +1,5 @@
 [project]
-name = "py-start"
+name = "git-cuttle"
 version = "0.1.0"
 requires-python = ">=3.10.12"
 
@@ -18,14 +18,14 @@ dev = [
 ]
 
 [project.scripts]
-pystart = "py_start.__main__:main"
+gitcuttle = "git_cuttle.__main__:main"
 
 [build-system]
 requires = ["setuptools >= 61.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["py_start"]
+packages = ["git_cuttle"]
 
 [tool.isort]
 profile = "black"

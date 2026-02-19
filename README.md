@@ -1,4 +1,4 @@
-# py-start
+# git-cuttle
 
 My rather opinionated Python project template.
 

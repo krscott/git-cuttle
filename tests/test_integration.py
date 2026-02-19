@@ -13,7 +13,7 @@ import pytest
 def test_cli_basic_argument() -> None:
     """Test CLI with a basic name argument."""
     result = subprocess.run(
-        ["pystart", "Alice"],
+        ["gitcuttle", "Alice"],
         capture_output=True,
         text=True,
     )
@@ -25,7 +25,7 @@ def test_cli_basic_argument() -> None:
 def test_cli_default_name() -> None:
     """Test CLI with no arguments uses default name."""
     result = subprocess.run(
-        ["pystart"],
+        ["gitcuttle"],
         capture_output=True,
         text=True,
     )
@@ -37,7 +37,7 @@ def test_cli_default_name() -> None:
 def test_cli_verbose_flag() -> None:
     """Test CLI with --verbose flag shows debug output."""
     result = subprocess.run(
-        ["pystart", "--verbose", "Bob"],
+        ["gitcuttle", "--verbose", "Bob"],
         capture_output=True,
         text=True,
     )
@@ -50,7 +50,7 @@ def test_cli_verbose_flag() -> None:
 def test_cli_verbose_short_flag() -> None:
     """Test CLI with -v short flag shows debug output."""
     result = subprocess.run(
-        ["pystart", "-v", "Charlie"],
+        ["gitcuttle", "-v", "Charlie"],
         capture_output=True,
         text=True,
     )
@@ -61,11 +61,11 @@ def test_cli_verbose_short_flag() -> None:
 
 @pytest.mark.integration
 def test_cli_verbose_env_var() -> None:
-    """Test CLI with PYSTART_VERBOSE environment variable."""
+    """Test CLI with GITCUTTLE_VERBOSE environment variable."""
     env = os.environ.copy()
-    env["PYSTART_VERBOSE"] = "1"
+    env["GITCUTTLE_VERBOSE"] = "1"
     result = subprocess.run(
-        ["pystart", "David"],
+        ["gitcuttle", "David"],
         capture_output=True,
         text=True,
         env=env,
@@ -80,9 +80,9 @@ def test_cli_flag_overrides_env_var() -> None:
     """Test that command line flag works even when env var is not set."""
     env = os.environ.copy()
     # Ensure the env var is not set
-    env.pop("PYSTART_VERBOSE", None)
+    env.pop("GITCUTTLE_VERBOSE", None)
     result = subprocess.run(
-        ["pystart", "--verbose", "Eve"],
+        ["gitcuttle", "--verbose", "Eve"],
         capture_output=True,
         text=True,
         env=env,
