@@ -64,6 +64,7 @@
             nativeBuildInputs = [
               pythonDev
               pkgs.pyright
+              pkgs.nodejs
             ];
             packages = [ pkgs.python3.pkgs.venvShellHook ];
             venvDir = ".venv";
