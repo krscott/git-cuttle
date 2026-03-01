@@ -13,13 +13,17 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
    - Parses subcommands and arguments.
    - Performs user-facing error handling.
 2. **Git operations layer** (`git_cuttle/git_ops.py`)
-   - Thin, typed wrappers around `git` subprocess commands.
+    - Thin, typed wrappers around `git` subprocess commands.
 3. **Workspace metadata layer** (`git_cuttle/workspace.py`)
-   - Immutable `WorkspaceConfig` model.
-   - Persistence and retrieval of workspace metadata.
-4. **Rebase orchestration layer** (`git_cuttle/rebase.py`)
-   - Recomputes merge commit and rebases workspace commits.
-   - Stores and restores interrupted rebase state.
+    - Immutable `WorkspaceConfig` model.
+    - Persistence and retrieval of workspace metadata.
+4. **Worktree tracking layer** (`git_cuttle/worktree_tracking.py`)
+   - Creates managed worktree paths under XDG data home.
+   - Persists tracked worktree metadata under `.git/gitcuttle`.
+   - Resolves local and remote branch targets for worktree creation.
+5. **Rebase orchestration layer** (`git_cuttle/rebase.py`)
+    - Recomputes merge commit and rebases workspace commits.
+    - Stores and restores interrupted rebase state.
 
 ## Data Model
 
@@ -28,6 +32,11 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
   - `branches`: parent branches included in the merge.
   - `base_branch`: branch from which workspace was created.
   - `merge_branch`: workspace branch name.
+- `TrackedWorktree`
+  - `branch`: branch name associated with the managed worktree.
+  - `path`: absolute managed worktree path.
+  - `kind`: either `"branch"` (single-branch mode) or `"workspace"`.
+  - `workspace_name`: optional workspace id when `kind == "workspace"`.
 - `RebaseState`
   - `operation`: `"rebase"` or `"pull"`.
   - `workspace_name`: workspace identifier.
@@ -38,6 +47,9 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
 
 - Workspace ref: `.git/refs/gitcuttle/<workspace-name>` (points to merge commit).
 - Workspace config: `.git/gitcuttle/workspaces/<workspace-name>.json`.
+- Tracked worktree config: `.git/gitcuttle/tracked-worktrees/<branch-hash>.json`.
+- Managed worktree directories:
+  `${XDG_DATA_HOME:-~/.local/share}/gitcuttle/worktrees/<repo>/<repo-fingerprint>/<branch...>`.
 - Rebase resume state: `.git/gitcuttle-rebase.json`.
 
 ## Command Behavior
@@ -45,22 +57,30 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
 - `gitcuttle new <branch...> [--name]`
   - Creates a workspace branch and performs octopus merge of parents.
   - Persists metadata and merge ref.
+- `gitcuttle worktree <branch...> [--name] [--print-path]`
+  - Single branch: creates/reuses a managed tracked worktree for the branch.
+  - If local branch is missing, resolves remote branch (prefers `origin`).
+  - Multiple branches: runs workspace creation flow then adds tracked worktree.
+  - `--print-path` prints only the resulting absolute path on success.
+  - On failure in `--print-path` mode, stdout remains empty and errors go to stderr.
 - `gitcuttle absorb [--continue]`
   - Recomputes parent merge on a temporary branch.
   - Rebases post-merge commits onto refreshed merge.
 - `gitcuttle update [--continue]`
   - Pulls each parent branch (`git pull --ff-only`) then runs absorb flow.
 - `gitcuttle list`
-  - Lists all persisted workspaces.
-- `gitcuttle delete [workspace]`
-  - Removes workspace metadata/ref tracking without deleting git branches.
+  - Lists persisted workspaces and tracked single-branch worktrees.
+- `gitcuttle delete [workspace-or-branch]`
+  - Removes tracked worktree path and tracked metadata when present.
+  - Removes workspace metadata/ref when target is a workspace.
 - `gitcuttle status`
-  - Shows current workspace and post-merge commit count.
+  - Shows current tracked workspace or tracked branch worktree state.
 
 ## Data Flow
 
 1. User runs a subcommand through `gitcuttle`.
 2. CLI resolves current workspace from current git branch when needed.
 3. Git layer runs required plumbing/porcelain operations.
-4. Workspace metadata is read/written under `.git` namespaces.
-5. For `absorb`/`update`, interrupted rebases persist state for `--continue`.
+4. Worktree command computes managed path under XDG data and runs `git worktree`.
+5. Workspace and tracked worktree metadata is read/written under `.git` namespaces.
+6. For `absorb`/`update`, interrupted rebases persist state for `--continue`.

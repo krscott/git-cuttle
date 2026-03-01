@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 
 class GitCuttleError(Exception):
@@ -13,6 +15,12 @@ class GitCommandError(GitCuttleError):
         super().__init__(f"Command failed: {command}\n{stderr.strip()}")
         self.args_list = args
         self.stderr = stderr
+
+
+@dataclass(frozen=True)
+class GitWorktree:
+    path: Path
+    branch: str | None
 
 
 def run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -29,6 +37,10 @@ def run_git(args: list[str], check: bool = True) -> subprocess.CompletedProcess[
 
 def get_current_branch() -> str:
     return run_git(["branch", "--show-current"]).stdout.strip()
+
+
+def get_repo_root() -> Path:
+    return Path(run_git(["rev-parse", "--show-toplevel"]).stdout.strip())
 
 
 def get_head_commit(ref: str = "HEAD") -> str:
@@ -69,6 +81,61 @@ def create_octopus_merge(branches: list[str], target_branch: str) -> str:
         ]
     )
     return get_head_commit()
+
+
+def branch_exists_local(branch: str) -> bool:
+    result = run_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], check=False)
+    return result.returncode == 0
+
+
+def list_remote_branch_matches(branch: str) -> list[str]:
+    result = run_git(["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
+    suffix = f"/{branch}"
+    matches: list[str] = []
+    for line in result.stdout.splitlines():
+        ref_name = line.strip()
+        if not ref_name or ref_name.endswith("/HEAD"):
+            continue
+        if ref_name.endswith(suffix):
+            matches.append(ref_name)
+    return sorted(matches)
+
+
+def list_git_worktrees() -> list[GitWorktree]:
+    result = run_git(["worktree", "list", "--porcelain"])
+    lines = result.stdout.splitlines()
+    worktrees: list[GitWorktree] = []
+    current_path: Path | None = None
+    current_branch: str | None = None
+
+    for raw_line in [*lines, ""]:
+        line = raw_line.strip()
+        if line == "":
+            if current_path is not None:
+                worktrees.append(GitWorktree(path=current_path, branch=current_branch))
+            current_path = None
+            current_branch = None
+            continue
+
+        if line.startswith("worktree "):
+            current_path = Path(line.removeprefix("worktree "))
+        elif line.startswith("branch "):
+            branch_ref = line.removeprefix("branch ")
+            current_branch = branch_ref.removeprefix("refs/heads/")
+
+    return worktrees
+
+
+def add_git_worktree(path: Path, branch: str) -> None:
+    run_git(["worktree", "add", str(path), branch])
+
+
+def add_git_worktree_from_remote(path: Path, branch: str, remote_ref: str) -> None:
+    run_git(["worktree", "add", "--track", "-b", branch, str(path), remote_ref])
+
+
+def remove_git_worktree(path: Path) -> None:
+    run_git(["worktree", "remove", str(path)])
 
 
 def rebase_onto(upstream_exclusive: str, new_base: str, branch: str) -> None:

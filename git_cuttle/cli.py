@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 
-from git_cuttle.git_ops import GitCuttleError, get_current_branch
+from git_cuttle.git_ops import GitCuttleError, get_current_branch, run_git
 from git_cuttle.rebase import rebase_workspace_commits, update_workspace
 from git_cuttle.workspace import (
     count_post_merge_commits,
@@ -11,6 +12,14 @@ from git_cuttle.workspace import (
     delete_workspace,
     get_workspace,
     list_workspaces,
+)
+from git_cuttle.worktree_tracking import (
+    delete_tracked_worktree,
+    ensure_branch_worktree,
+    ensure_workspace_worktree,
+    get_tracked_worktree,
+    list_tracked_worktrees,
+    remove_tracked_worktree_path,
 )
 
 
@@ -22,6 +31,17 @@ def build_parser() -> argparse.ArgumentParser:
     new_parser = subparsers.add_parser("new", help="create a new workspace")
     new_parser.add_argument("branches", nargs="+", help="branches to merge")
     new_parser.add_argument("--name", help="workspace branch name")
+
+    worktree_parser = subparsers.add_parser(
+        "worktree", help="create tracked worktree for branch or workspace"
+    )
+    worktree_parser.add_argument("branches", nargs="+", help="branch or branches")
+    worktree_parser.add_argument("--name", help="workspace branch name")
+    worktree_parser.add_argument(
+        "--print-path",
+        action="store_true",
+        help="print only resulting worktree path",
+    )
 
     absorb_parser = subparsers.add_parser(
         "absorb", help="rebase workspace commits onto refreshed merge"
@@ -37,30 +57,88 @@ def build_parser() -> argparse.ArgumentParser:
         "--continue", dest="continue_rebase", action="store_true"
     )
 
-    delete_parser = subparsers.add_parser("delete", help="delete workspace metadata")
+    delete_parser = subparsers.add_parser(
+        "delete", help="delete tracked workspace/worktree"
+    )
     delete_parser.add_argument(
         "workspace",
         nargs="?",
-        help="workspace name (defaults to current branch workspace)",
+        help="workspace or branch name (defaults to current branch)",
     )
 
-    subparsers.add_parser("list", help="list workspaces")
-    subparsers.add_parser("status", help="show current workspace status")
+    subparsers.add_parser("list", help="list workspaces and tracked worktrees")
+    subparsers.add_parser("status", help="show current tracked status")
     return parser
 
 
-def _show_workspace_status() -> int:
+def _show_status() -> int:
     current = get_current_branch()
     workspace = get_workspace(current)
-    if workspace is None:
-        print(f"{current}: not a tracked gitcuttle workspace")
+    tracked_worktree = get_tracked_worktree(current)
+
+    if workspace is None and tracked_worktree is None:
+        print(f"{current}: not tracked by gitcuttle")
         return 1
 
-    post_merge_count = count_post_merge_commits(workspace)
-    branches = ", ".join(workspace.branches)
-    print(f"workspace: {workspace.name}")
-    print(f"parents: {branches}")
-    print(f"post-merge commits: {post_merge_count}")
+    if workspace is not None:
+        post_merge_count = count_post_merge_commits(workspace)
+        branches = ", ".join(workspace.branches)
+        print(f"workspace: {workspace.name}")
+        print(f"parents: {branches}")
+        print(f"post-merge commits: {post_merge_count}")
+        if tracked_worktree is not None:
+            print(f"worktree path: {tracked_worktree.path}")
+        return 0
+
+    assert tracked_worktree is not None
+    print(f"branch: {tracked_worktree.branch}")
+    print("type: tracked worktree")
+    print(f"worktree path: {tracked_worktree.path}")
+    return 0
+
+
+def _show_worktree_result(
+    path: str,
+    print_path: bool,
+    reused: bool,
+    workspace_name: str | None,
+) -> None:
+    if print_path:
+        print(path)
+        return
+
+    if workspace_name is not None:
+        print(f"created workspace: {workspace_name}")
+    action = "reused" if reused else "created"
+    print(f"{action} worktree: {path}")
+    print(f"cd {path}")
+
+
+def _show_list() -> int:
+    workspaces = list_workspaces()
+    tracked_worktrees = list_tracked_worktrees()
+
+    if not workspaces and not tracked_worktrees:
+        print("no tracked workspaces or worktrees")
+        return 0
+
+    tracked_by_branch = {tracked.branch: tracked for tracked in tracked_worktrees}
+
+    for workspace in workspaces:
+        branches = ", ".join(workspace.branches)
+        tracked = tracked_by_branch.get(workspace.merge_branch)
+        if tracked is None:
+            print(f"{workspace.name} [workspace]: parents={branches}")
+        else:
+            print(
+                f"{workspace.name} [workspace]: parents={branches} path={tracked.path}"
+            )
+
+    for tracked in tracked_worktrees:
+        if tracked.kind == "workspace":
+            continue
+        print(f"{tracked.branch} [branch]: path={tracked.path}")
+
     return 0
 
 
@@ -78,6 +156,33 @@ def main(argv: list[str] | None = None) -> int:
                 raise GitCuttleError("new requires at least two branches")
             created_workspace = create_workspace(args.branches, args.name)
             print(f"created workspace: {created_workspace.name}")
+            return 0
+
+        elif args.command == "worktree":
+            if len(args.branches) == 1:
+                if args.name is not None:
+                    raise GitCuttleError("--name is only valid for multiple branches")
+                result = ensure_branch_worktree(args.branches[0])
+                _show_worktree_result(
+                    path=result.tracked.path,
+                    print_path=args.print_path,
+                    reused=result.reused,
+                    workspace_name=None,
+                )
+                return 0
+
+            original_branch = get_current_branch()
+            created_workspace = create_workspace(args.branches, args.name)
+            if get_current_branch() == created_workspace.merge_branch:
+                run_git(["checkout", original_branch])
+
+            result = ensure_workspace_worktree(created_workspace)
+            _show_worktree_result(
+                path=result.tracked.path,
+                print_path=args.print_path,
+                reused=result.reused,
+                workspace_name=created_workspace.name,
+            )
             return 0
 
         elif args.command == "absorb":
@@ -101,29 +206,37 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         elif args.command == "delete":
-            target_workspace = (
-                get_workspace(args.workspace) if args.workspace else get_workspace()
-            )
-            if target_workspace is None:
-                raise GitCuttleError("workspace not found")
-            delete_workspace(target_workspace.name)
-            print(f"deleted workspace metadata: {target_workspace.name}")
+            target_name = args.workspace or get_current_branch()
+            target_workspace = get_workspace(target_name)
+            tracked_worktree = get_tracked_worktree(target_name)
+
+            if target_workspace is None and tracked_worktree is None:
+                raise GitCuttleError("workspace or tracked worktree not found")
+
+            if tracked_worktree is not None:
+                remove_tracked_worktree_path(tracked_worktree)
+                delete_tracked_worktree(tracked_worktree.branch)
+
+            if target_workspace is not None:
+                delete_workspace(target_workspace.name)
+
+            if target_workspace is not None and tracked_worktree is not None:
+                print(f"deleted workspace and worktree: {target_workspace.name}")
+            elif target_workspace is not None:
+                print(f"deleted workspace metadata: {target_workspace.name}")
+            else:
+                assert tracked_worktree is not None
+                print(f"deleted tracked worktree: {tracked_worktree.branch}")
             return 0
 
         elif args.command == "list":
-            workspaces = list_workspaces()
-            if not workspaces:
-                print("no workspaces")
-                return 0
-            for workspace in workspaces:
-                print(f"{workspace.name}: {', '.join(workspace.branches)}")
-            return 0
+            return _show_list()
 
         elif args.command == "status":
-            return _show_workspace_status()
+            return _show_status()
 
         parser.error("unknown command")
         return 2
     except GitCuttleError as exc:
-        print(str(exc))
+        print(str(exc), file=sys.stderr)
         return 1
