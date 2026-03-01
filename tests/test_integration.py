@@ -235,7 +235,8 @@ def test_cli_worktree_remote_fallback_prefers_origin() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         root = Path(tmp_dir)
         repo = root / "repo"
-        remote = root / "remote.git"
+        origin_remote = root / "origin.git"
+        fork_remote = root / "fork.git"
         xdg_data_home = root / "xdg-data"
 
         repo.mkdir()
@@ -246,19 +247,30 @@ def test_cli_worktree_remote_fallback_prefers_origin() -> None:
         _git(repo, "add", ".")
         _git(repo, "commit", "-m", "base")
 
-        remote.mkdir()
-        _git(remote, "init", "--bare")
-        _git(repo, "remote", "add", "origin", str(remote))
+        origin_remote.mkdir()
+        fork_remote.mkdir()
+        _git(origin_remote, "init", "--bare")
+        _git(fork_remote, "init", "--bare")
+
+        _git(repo, "remote", "add", "origin", str(origin_remote))
+        _git(repo, "remote", "add", "fork", str(fork_remote))
         _git(repo, "push", "-u", "origin", "main")
+        _git(repo, "push", "fork", "main")
 
         _git(repo, "checkout", "-b", "remote-feature")
-        (repo / "remote.txt").write_text("remote\n", encoding="utf-8")
+        (repo / "origin.txt").write_text("origin\n", encoding="utf-8")
         _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "remote feature")
+        _git(repo, "commit", "-m", "origin remote feature")
         _git(repo, "push", "-u", "origin", "remote-feature")
+
+        (repo / "fork.txt").write_text("fork\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "fork remote feature")
+        _git(repo, "push", "fork", "remote-feature")
+
         _git(repo, "checkout", "main")
         _git(repo, "branch", "-D", "remote-feature")
-        _git(repo, "fetch", "origin")
+        _git(repo, "fetch", "--all")
 
         run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
         result = subprocess.run(
@@ -280,7 +292,120 @@ def test_cli_worktree_remote_fallback_prefers_origin() -> None:
         assert result.returncode == 0
         worktree_path = Path(result.stdout.strip())
         assert worktree_path.exists()
-        assert _git_output(worktree_path, "branch", "--show-current") == "remote-feature"
+        assert (worktree_path / "origin.txt").exists()
+        assert not (worktree_path / "fork.txt").exists()
+        assert (
+            _git_output(worktree_path, "branch", "--show-current") == "remote-feature"
+        )
+        assert _git_output(worktree_path, "rev-parse", "HEAD") == _git_output(
+            repo, "rev-parse", "origin/remote-feature"
+        )
+
+
+@pytest.mark.integration
+def test_cli_worktree_remote_fallback_ambiguous_without_origin() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        upstream_remote = root / "upstream.git"
+        fork_remote = root / "fork.git"
+        xdg_data_home = root / "xdg-data"
+
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        upstream_remote.mkdir()
+        fork_remote.mkdir()
+        _git(upstream_remote, "init", "--bare")
+        _git(fork_remote, "init", "--bare")
+
+        _git(repo, "remote", "add", "upstream", str(upstream_remote))
+        _git(repo, "remote", "add", "fork", str(fork_remote))
+        _git(repo, "push", "upstream", "main")
+        _git(repo, "push", "fork", "main")
+
+        _git(repo, "checkout", "-b", "remote-feature")
+        (repo / "remote.txt").write_text("remote\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "remote feature")
+        _git(repo, "push", "upstream", "remote-feature")
+        _git(repo, "push", "fork", "remote-feature")
+        _git(repo, "checkout", "main")
+        _git(repo, "branch", "-D", "remote-feature")
+        _git(repo, "fetch", "--all")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "remote-feature",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "ambiguous remote branch for remote-feature" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_worktree_remote_fallback_missing_branch() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "missing-branch",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert (
+            "branch not found locally or on any remote: missing-branch" in result.stderr
+        )
 
 
 @pytest.mark.integration

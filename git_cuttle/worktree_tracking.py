@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from git_cuttle.git_ops import (
     GitCuttleError,
@@ -63,7 +63,7 @@ def _load_tracked_worktree(path: Path) -> TrackedWorktree:
     return TrackedWorktree(
         branch=str(payload["branch"]),
         path=str(payload["path"]),
-        kind=kind,
+        kind=cast(TrackedWorktreeKind, kind),
         workspace_name=None if workspace_name is None else str(workspace_name),
     )
 

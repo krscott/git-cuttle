@@ -84,7 +84,9 @@ def create_octopus_merge(branches: list[str], target_branch: str) -> str:
 
 
 def branch_exists_local(branch: str) -> bool:
-    result = run_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], check=False)
+    result = run_git(
+        ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], check=False
+    )
     return result.returncode == 0
 
 
