@@ -120,8 +120,11 @@ def update_octopus_workspace(
             message="failed to fetch octopus parent refs",
         )
 
-    resolved_parent_refs = tuple(
-        _resolve_octopus_parent_ref(
+    _ensure_workspace_clean_for_octopus_update(workspace=workspace)
+    original_branch = _current_branch(repo_root=repo_root)
+
+    updated_parent_refs = tuple(
+        _update_octopus_parent(
             repo_root=repo_root,
             remote_name=remote_name,
             parent_ref=parent_ref,
@@ -129,22 +132,19 @@ def update_octopus_workspace(
         for parent_ref in workspace.octopus_parents
     )
 
-    _ensure_workspace_clean_for_octopus_update(workspace=workspace)
-
     before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
     replay_commits = _octopus_replay_commits(
         repo_root=repo_root,
         branch=workspace.branch,
-        parent_refs=resolved_parent_refs,
+        parent_refs=updated_parent_refs,
     )
 
-    original_branch = _current_branch(repo_root=repo_root)
     _checkout_branch(repo_root=repo_root, branch=workspace.branch)
     try:
         try:
             _git(
                 repo_root=repo_root,
-                args=["reset", "--hard", resolved_parent_refs[0]],
+                args=["reset", "--hard", updated_parent_refs[0]],
                 code="octopus-update-reset-failed",
                 message="failed to reset octopus workspace branch to first parent",
             )
@@ -155,7 +155,7 @@ def update_octopus_workspace(
                     "--no-ff",
                     "-m",
                     f"Rebuild octopus workspace {workspace.branch}",
-                    *resolved_parent_refs[1:],
+                    *updated_parent_refs[1:],
                 ],
                 code="octopus-update-merge-failed",
                 message="failed to rebuild octopus merge commit",
@@ -185,7 +185,7 @@ def update_octopus_workspace(
         branch=workspace.branch,
         before_oid=before_oid,
         after_oid=after_oid,
-        parent_refs=resolved_parent_refs,
+        parent_refs=updated_parent_refs,
         replayed_commits=tuple(replay_commits),
     )
 
@@ -211,16 +211,24 @@ def _branch_head(*, repo_root: Path, branch: str) -> str:
     return branch_oid
 
 
-def _resolve_octopus_parent_ref(
+def _update_octopus_parent(
     *, repo_root: Path, remote_name: str | None, parent_ref: str
 ) -> str:
-    if remote_name is not None:
-        remote_tracking_ref = f"refs/remotes/{remote_name}/{parent_ref}"
-        if _rev_parse(repo_root=repo_root, ref=remote_tracking_ref) is not None:
-            return f"{remote_name}/{parent_ref}"
-
     local_ref = f"refs/heads/{parent_ref}"
     if _rev_parse(repo_root=repo_root, ref=local_ref) is not None:
+        if remote_name is None:
+            return parent_ref
+
+        remote_tracking_ref = f"refs/remotes/{remote_name}/{parent_ref}"
+        if _rev_parse(repo_root=repo_root, ref=remote_tracking_ref) is None:
+            return parent_ref
+
+        _git(
+            repo_root=repo_root,
+            args=["rebase", f"{remote_name}/{parent_ref}", parent_ref],
+            code="octopus-parent-update-failed",
+            message=f"failed to rebase octopus parent {parent_ref} onto upstream",
+        )
         return parent_ref
 
     raise AppError(

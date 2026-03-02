@@ -324,10 +324,8 @@ def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(
         .split()
     )
     expected_parents = [
-        _git(cwd=local, args=["rev-parse", "--verify", "origin/main"]).stdout.strip(),
-        _git(
-            cwd=local, args=["rev-parse", "--verify", "origin/release"]
-        ).stdout.strip(),
+        _git(cwd=local, args=["rev-parse", "--verify", "main"]).stdout.strip(),
+        _git(cwd=local, args=["rev-parse", "--verify", "release"]).stdout.strip(),
     ]
 
     assert rebuilt_merge_parents == expected_parents

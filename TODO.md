@@ -82,7 +82,7 @@ implementation work and user-visible automated test coverage.
   consistent with explicit branch mode. Add CLI integration tests for omitted
   branch generation and uniqueness.
 
-- [ ] [P0] Story: Align octopus `update` with parent-update contract.
+- [x] [P0] Story: Align octopus `update` with parent-update contract.
   Update each tracked parent individually before octopus rebuild (rebase parent
   onto upstream when upstream exists; otherwise use local parent tip), then
   rebuild and replay post-merge commits. Add integration tests asserting parent

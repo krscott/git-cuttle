@@ -195,21 +195,19 @@ def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_com
         .split()
     )
     expected_parents = [
-        _git(cwd=local, args=["rev-parse", "--verify", "origin/main"]).stdout.strip(),
-        _git(
-            cwd=local, args=["rev-parse", "--verify", "origin/release"]
-        ).stdout.strip(),
+        _git(cwd=local, args=["rev-parse", "--verify", "main"]).stdout.strip(),
+        _git(cwd=local, args=["rev-parse", "--verify", "release"]).stdout.strip(),
     ]
 
     assert rebuilt_merge_parents == expected_parents
     assert (local / "post-merge.txt").read_text() == "local post merge\n"
     assert result.changed
-    assert result.parent_refs == ("origin/main", "origin/release")
+    assert result.parent_refs == ("main", "release")
     assert len(result.replayed_commits) == 1
 
 
 @pytest.mark.integration
-def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(
+def test_update_octopus_rebases_parent_onto_remote_then_uses_updated_local_tip(
     tmp_path: Path,
 ) -> None:
     bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
@@ -266,8 +264,12 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(
     remote_release_head = _git(
         cwd=local, args=["rev-parse", "--verify", "origin/release"]
     ).stdout.strip()
+    updated_release_head = _git(
+        cwd=local, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
     assert local_release_head != remote_release_head
-    assert result.parent_refs == ("origin/main", "origin/release")
+    assert updated_release_head != remote_release_head
+    assert result.parent_refs == ("main", "release")
 
     rebuilt_parent_commit = _git(
         cwd=local,
@@ -281,7 +283,79 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(
         .stdout.strip()
         .split()
     )
-    assert rebuilt_merge_parents[1] == remote_release_head
+    assert rebuilt_merge_parents[1] == updated_release_head
+    assert _git(
+        cwd=local,
+        args=["merge-base", "--is-ancestor", "origin/release", "release"],
+        check=False,
+    ).returncode == 0
+
+
+@pytest.mark.integration
+def test_update_octopus_uses_local_parent_tips_when_no_remote_is_configured(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    _git(cwd=repo, args=["checkout", "-b", "release"])
+    (repo / "release.txt").write_text("release v1\n")
+    _git(cwd=repo, args=["add", "release.txt"])
+    _git(cwd=repo, args=["commit", "-m", "release v1"])
+
+    _git(cwd=repo, args=["checkout", "main"])
+    _git(cwd=repo, args=["checkout", "-b", "integration/main-release", "main"])
+    _git(
+        cwd=repo,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
+
+    _git(cwd=repo, args=["checkout", "main"])
+    (repo / "main.txt").write_text("main v2\n")
+    _git(cwd=repo, args=["add", "main.txt"])
+    _git(cwd=repo, args=["commit", "-m", "main v2"])
+
+    _git(cwd=repo, args=["checkout", "release"])
+    (repo / "release-v2.txt").write_text("release v2\n")
+    _git(cwd=repo, args=["add", "release-v2.txt"])
+    _git(cwd=repo, args=["commit", "-m", "release v2"])
+
+    _git(cwd=repo, args=["checkout", "integration/main-release"])
+    workspace = WorkspaceMetadata(
+        branch="integration/main-release",
+        worktree_path=repo,
+        tracked_remote=None,
+        kind="octopus",
+        base_ref="main",
+        octopus_parents=("main", "release"),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+
+    result = update_octopus_workspace(
+        repo_root=repo,
+        workspace=workspace,
+        default_remote=None,
+    )
+
+    rebuilt_parent_commit = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", "integration/main-release"],
+    ).stdout.strip()
+    rebuilt_merge_parents = (
+        _git(
+            cwd=repo,
+            args=["show", "-s", "--format=%P", rebuilt_parent_commit],
+        )
+        .stdout.strip()
+        .split()
+    )
+    assert rebuilt_merge_parents == [
+        _git(cwd=repo, args=["rev-parse", "--verify", "main"]).stdout.strip(),
+        _git(cwd=repo, args=["rev-parse", "--verify", "release"]).stdout.strip(),
+    ]
+    assert result.parent_refs == ("main", "release")
 
 
 @pytest.mark.integration
