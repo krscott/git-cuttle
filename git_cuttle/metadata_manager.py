@@ -1,6 +1,41 @@
+import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Literal, cast
+
+
+SCHEMA_VERSION = 1
+WorkspaceKind = Literal["standard", "octopus"]
+
+
+@dataclass(kw_only=True, frozen=True)
+class WorkspaceMetadata:
+    branch: str
+    worktree_path: Path
+    tracked_remote: str | None
+    kind: WorkspaceKind
+    base_ref: str
+    octopus_parents: tuple[str, ...]
+    created_at: str
+    updated_at: str
+
+
+@dataclass(kw_only=True, frozen=True)
+class RepoMetadata:
+    git_dir: Path
+    repo_root: Path
+    default_remote: str | None
+    tracked_at: str
+    updated_at: str
+    workspaces: dict[str, WorkspaceMetadata]
+
+
+@dataclass(kw_only=True, frozen=True)
+class WorkspacesMetadata:
+    version: int
+    repos: dict[str, RepoMetadata]
 
 
 def default_metadata_path() -> Path:
@@ -16,3 +51,196 @@ class MetadataManager:
 
     def ensure_parent_dir(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def read(self) -> WorkspacesMetadata:
+        if not self.path.exists():
+            return WorkspacesMetadata(version=SCHEMA_VERSION, repos={})
+
+        loaded = json.loads(self.path.read_text())
+        metadata = _parse_workspaces_metadata(loaded)
+        _validate_workspaces_metadata(metadata)
+        return metadata
+
+    def write(self, metadata: WorkspacesMetadata) -> None:
+        _validate_workspaces_metadata(metadata)
+        self.ensure_parent_dir()
+        self.path.write_text(json.dumps(_serialize_workspaces_metadata(metadata), indent=2))
+
+
+def _parse_workspaces_metadata(raw: object) -> WorkspacesMetadata:
+    root = _expect_json_object(raw, context="metadata file")
+
+    version = root.get("version")
+    repos_raw = root.get("repos")
+
+    if not isinstance(version, int):
+        raise ValueError("metadata version must be an integer")
+    repos_obj = _expect_json_object(repos_raw, context="metadata repos")
+
+    repos: dict[str, RepoMetadata] = {}
+    for repo_key, repo_raw in repos_obj.items():
+        repo_obj = _expect_json_object(repo_raw, context="repo records")
+
+        workspaces_raw = repo_obj.get("workspaces")
+        workspaces_obj = _expect_json_object(workspaces_raw, context="repo workspaces")
+
+        workspaces: dict[str, WorkspaceMetadata] = {}
+        for workspace_key, workspace_raw in workspaces_obj.items():
+            workspace_obj = _expect_json_object(
+                workspace_raw, context="workspace records"
+            )
+
+            octopus_parents_raw = workspace_obj.get("octopus_parents")
+            if not isinstance(octopus_parents_raw, list):
+                raise ValueError("workspace octopus_parents must be a list of strings")
+            octopus_parents: list[str] = []
+            for parent_raw in cast(list[object], octopus_parents_raw):
+                if not isinstance(parent_raw, str):
+                    raise ValueError("workspace octopus_parents must be a list of strings")
+                octopus_parents.append(parent_raw)
+
+            kind_raw = workspace_obj.get("kind")
+            if kind_raw not in {"standard", "octopus"}:
+                raise ValueError("workspace kind must be either 'standard' or 'octopus'")
+            kind: WorkspaceKind = (
+                "standard" if kind_raw == "standard" else "octopus"
+            )
+
+            tracked_remote = workspace_obj.get("tracked_remote")
+            if tracked_remote is not None and not isinstance(tracked_remote, str):
+                raise ValueError("workspace tracked_remote must be a string or null")
+
+            branch = workspace_obj.get("branch")
+            worktree_path = workspace_obj.get("worktree_path")
+            base_ref = workspace_obj.get("base_ref")
+            created_at = workspace_obj.get("created_at")
+            updated_at = workspace_obj.get("updated_at")
+
+            if not isinstance(branch, str):
+                raise ValueError("workspace branch must be a string")
+            if not isinstance(worktree_path, str):
+                raise ValueError("workspace worktree_path must be a string")
+            if not isinstance(base_ref, str):
+                raise ValueError("workspace base_ref must be a string")
+            if not isinstance(created_at, str):
+                raise ValueError("workspace created_at must be a string")
+            if not isinstance(updated_at, str):
+                raise ValueError("workspace updated_at must be a string")
+
+            workspaces[workspace_key] = WorkspaceMetadata(
+                branch=branch,
+                worktree_path=Path(worktree_path),
+                tracked_remote=tracked_remote,
+                kind=kind,
+                base_ref=base_ref,
+                octopus_parents=tuple(octopus_parents),
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+
+        default_remote = repo_obj.get("default_remote")
+        if default_remote is not None and not isinstance(default_remote, str):
+            raise ValueError("repo default_remote must be a string or null")
+
+        git_dir = repo_obj.get("git_dir")
+        repo_root = repo_obj.get("repo_root")
+        tracked_at = repo_obj.get("tracked_at")
+        updated_at = repo_obj.get("updated_at")
+
+        if not isinstance(git_dir, str):
+            raise ValueError("repo git_dir must be a string")
+        if not isinstance(repo_root, str):
+            raise ValueError("repo repo_root must be a string")
+        if not isinstance(tracked_at, str):
+            raise ValueError("repo tracked_at must be a string")
+        if not isinstance(updated_at, str):
+            raise ValueError("repo updated_at must be a string")
+
+        repos[repo_key] = RepoMetadata(
+            git_dir=Path(git_dir),
+            repo_root=Path(repo_root),
+            default_remote=default_remote,
+            tracked_at=tracked_at,
+            updated_at=updated_at,
+            workspaces=workspaces,
+        )
+
+    return WorkspacesMetadata(version=version, repos=repos)
+
+
+def _serialize_workspaces_metadata(metadata: WorkspacesMetadata) -> dict[str, object]:
+    repos: dict[str, object] = {}
+    for repo_key, repo in metadata.repos.items():
+        workspaces: dict[str, object] = {}
+        for workspace_key, workspace in repo.workspaces.items():
+            workspaces[workspace_key] = {
+                "branch": workspace.branch,
+                "worktree_path": str(workspace.worktree_path),
+                "tracked_remote": workspace.tracked_remote,
+                "kind": workspace.kind,
+                "base_ref": workspace.base_ref,
+                "octopus_parents": list(workspace.octopus_parents),
+                "created_at": workspace.created_at,
+                "updated_at": workspace.updated_at,
+            }
+
+        repos[repo_key] = {
+            "git_dir": str(repo.git_dir),
+            "repo_root": str(repo.repo_root),
+            "default_remote": repo.default_remote,
+            "tracked_at": repo.tracked_at,
+            "updated_at": repo.updated_at,
+            "workspaces": workspaces,
+        }
+
+    return {"version": metadata.version, "repos": repos}
+
+
+def _validate_workspaces_metadata(metadata: WorkspacesMetadata) -> None:
+    if metadata.version != SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported metadata schema version: {metadata.version}; expected {SCHEMA_VERSION}"
+        )
+
+    for repo_key, repo in metadata.repos.items():
+        if repo_key != str(repo.git_dir):
+            raise ValueError("repo key must match repo.git_dir exactly")
+        if not repo.git_dir.is_absolute():
+            raise ValueError("repo.git_dir must be an absolute path")
+        if not repo.repo_root.is_absolute():
+            raise ValueError("repo.repo_root must be an absolute path")
+        _validate_timestamp(repo.tracked_at, field_name="repo.tracked_at")
+        _validate_timestamp(repo.updated_at, field_name="repo.updated_at")
+
+        seen_worktree_paths: set[Path] = set()
+        for workspace_key, workspace in repo.workspaces.items():
+            if workspace_key != workspace.branch:
+                raise ValueError("workspace key must match workspace.branch exactly")
+            if not workspace.worktree_path.is_absolute():
+                raise ValueError("workspace.worktree_path must be an absolute path")
+            if workspace.worktree_path in seen_worktree_paths:
+                raise ValueError("workspace.worktree_path must be unique within a repo")
+            seen_worktree_paths.add(workspace.worktree_path)
+            _validate_timestamp(workspace.created_at, field_name="workspace.created_at")
+            _validate_timestamp(workspace.updated_at, field_name="workspace.updated_at")
+            if workspace.kind == "standard" and workspace.octopus_parents:
+                raise ValueError("standard workspaces must not have octopus parents")
+            if workspace.kind == "octopus" and len(workspace.octopus_parents) < 2:
+                raise ValueError("octopus workspaces must have at least two parents")
+
+
+def _validate_timestamp(value: str, *, field_name: str) -> None:
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 timestamp") from exc
+
+
+def _expect_json_object(raw: object, *, context: str) -> dict[str, object]:
+    if not isinstance(raw, dict):
+        raise ValueError(f"{context} must be an object")
+    raw_obj = cast(dict[object, object], raw)
+    for key_obj in raw_obj.keys():
+        if not isinstance(key_obj, str):
+            raise ValueError(f"{context} keys must be strings")
+    return cast(dict[str, object], raw_obj)
