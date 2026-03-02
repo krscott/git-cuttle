@@ -26,7 +26,7 @@
 
 - [x] Implement repo context detection and hard error outside git repos.
 - [ ] Implement auto-tracking for mutating commands only (`new`, `delete`, `prune`, `update`, `absorb`).
-- [ ] Ensure commands behave consistently from repo root and worktree directories.
+- [x] Ensure commands behave consistently from repo root and worktree directories.
 
 ## Command Implementation
 

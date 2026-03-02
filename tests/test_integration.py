@@ -10,6 +10,19 @@ import subprocess
 import pytest
 
 
+def _init_repo(path: pathlib.Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], check=True, cwd=path)
+    subprocess.run(["git", "config", "user.name", "Test User"], check=True, cwd=path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        check=True,
+        cwd=path,
+    )
+    (path / "README.md").write_text("repo\n")
+    subprocess.run(["git", "add", "README.md"], check=True, cwd=path)
+    subprocess.run(["git", "commit", "-m", "init"], check=True, cwd=path)
+
+
 @pytest.mark.integration
 def test_cli_basic_argument() -> None:
     """Test CLI with a basic name argument."""
@@ -105,3 +118,35 @@ def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
     assert result.returncode != 0
     assert "error[not-in-git-repo]: gitcuttle must be run from within a git repository" in result.stderr
     assert "hint: change to your repository root or one of its worktrees and retry" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_behaves_same_from_repo_root_and_worktree(tmp_path: pathlib.Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_repo(repo_root)
+
+    worktree_dir = tmp_path / "repo-feature"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "feature", str(worktree_dir)],
+        check=True,
+        cwd=repo_root,
+    )
+
+    root_result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    worktree_result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=worktree_dir,
+    )
+
+    assert root_result.returncode == 0
+    assert worktree_result.returncode == 0
+    assert root_result.stdout == worktree_result.stdout
+    assert "Hello, Grace!" in root_result.stdout
