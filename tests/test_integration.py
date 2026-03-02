@@ -347,6 +347,58 @@ def test_cli_delete_worktree_only_succeeds_from_deleted_worktree_cwd() -> None:
 
 
 @pytest.mark.integration
+def test_cli_worktree_single_branch_handles_filesystem_errors() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        readonly_xdg_data_home = root / "xdg-readonly"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+        _git(repo, "checkout", "main")
+
+        readonly_xdg_data_home.mkdir(parents=True, exist_ok=True)
+        readonly_xdg_data_home.chmod(0o500)
+        try:
+            run_env = {**env, "XDG_DATA_HOME": str(readonly_xdg_data_home)}
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "git_cuttle",
+                    "worktree",
+                    "feature-a",
+                    "--print-path",
+                ],
+                cwd=repo,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=run_env,
+            )
+        finally:
+            readonly_xdg_data_home.chmod(0o700)
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "failed to create managed worktree directory" in result.stderr
+        assert "Traceback" not in result.stderr
+
+
+@pytest.mark.integration
 def test_cli_list_reports_invalid_tracked_worktree_metadata() -> None:
     project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
