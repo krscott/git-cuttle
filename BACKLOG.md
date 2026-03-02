@@ -49,3 +49,12 @@ Nice-to-have improvements discovered during PR review.
 - [ ] Add an end-to-end smoke command (`python -m pytest -m integration -k
   "destination or parity or rollback"`) to speed up local validation of the
   highest-risk DESIGN contracts before pushing.
+
+- [ ] Add failure-injection integration parametrization for each mutating
+  command transaction step to continuously stress-test rollback guarantees.
+
+- [ ] Add large-repo/list-performance integration fixtures (many workspaces,
+  mixed remote states) to guard status-cache behavior and output latency.
+
+- [ ] Add a PR-comment helper script that summarizes changed DESIGN requirements,
+  matrix rows touched, and any remaining required-fix TODO stories.

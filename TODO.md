@@ -5,4 +5,6 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-No open required-fix stories from the current PR review.
+- Review run 2026-03-02: no open required-fix stories.
+- Verification completed: `python -m pytest`, `python -m mypy .`, and
+  `python -m pyright` all pass on this branch.
