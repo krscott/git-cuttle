@@ -12,6 +12,7 @@ from git_cuttle.git_ops import (
 )
 from git_cuttle.rebase import rebase_workspace_commits, update_workspace
 from git_cuttle.workspace import (
+    WorkspaceConfig,
     count_post_merge_commits,
     create_workspace,
     delete_workspace,
@@ -20,6 +21,7 @@ from git_cuttle.workspace import (
     list_workspaces,
 )
 from git_cuttle.worktree_tracking import (
+    TrackedWorktree,
     delete_tracked_worktree,
     ensure_branch_worktree,
     ensure_workspace_worktree,
@@ -66,6 +68,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     delete_parser = subparsers.add_parser(
         "delete", help="delete tracked workspace/worktree"
+    )
+    delete_target_group = delete_parser.add_mutually_exclusive_group()
+    delete_target_group.add_argument(
+        "--workspace-only",
+        action="store_true",
+        help="delete only workspace metadata",
+    )
+    delete_target_group.add_argument(
+        "--worktree-only",
+        action="store_true",
+        help="delete only tracked worktree",
     )
     delete_parser.add_argument(
         "workspace",
@@ -177,6 +190,16 @@ def _rollback_workspace_creation(
     return "; ".join(errors)
 
 
+def _is_workspace_tracked_worktree_pair(
+    workspace: WorkspaceConfig, tracked_worktree: TrackedWorktree
+) -> bool:
+    return (
+        tracked_worktree.branch == workspace.merge_branch
+        and tracked_worktree.kind == "workspace"
+        and tracked_worktree.workspace_name == workspace.name
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -261,8 +284,40 @@ def main(argv: list[str] | None = None) -> int:
             target_workspace = get_workspace(target_name)
             tracked_worktree = get_tracked_worktree(target_name)
 
-            if target_workspace is None and tracked_worktree is None:
+            has_workspace = target_workspace is not None
+            has_worktree = tracked_worktree is not None
+
+            if not has_workspace and not has_worktree:
                 raise GitCuttleError("workspace or tracked worktree not found")
+
+            if args.workspace_only:
+                if not has_workspace:
+                    raise GitCuttleError("workspace not found")
+                assert target_workspace is not None
+                delete_workspace(target_workspace.name)
+                print(f"deleted workspace metadata: {target_workspace.name}")
+                return 0
+
+            if args.worktree_only:
+                if not has_worktree:
+                    raise GitCuttleError("tracked worktree not found")
+                assert tracked_worktree is not None
+                remove_tracked_worktree_path(tracked_worktree)
+                delete_tracked_worktree(tracked_worktree.branch)
+                print(f"deleted tracked worktree: {tracked_worktree.branch}")
+                return 0
+
+            if has_workspace and has_worktree:
+                assert target_workspace is not None
+                assert tracked_worktree is not None
+                if not _is_workspace_tracked_worktree_pair(
+                    workspace=target_workspace,
+                    tracked_worktree=tracked_worktree,
+                ):
+                    raise GitCuttleError(
+                        f"ambiguous delete target: {target_name}. "
+                        "use --workspace-only or --worktree-only"
+                    )
 
             if tracked_worktree is not None:
                 remove_tracked_worktree_path(tracked_worktree)

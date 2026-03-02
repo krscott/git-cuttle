@@ -662,3 +662,112 @@ def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure() -> None:
             text=True,
         )
         assert branch_result.returncode == 1
+
+
+@pytest.mark.integration
+def test_cli_delete_requires_disambiguation_for_unlinked_collision() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        create_workspace_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "new",
+                "feature-a",
+                "feature-b",
+                "--name",
+                "ws",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_workspace_result.returncode == 0
+
+        _git(repo, "checkout", "main")
+        branch_worktree_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "ws",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert branch_worktree_result.returncode == 0
+        worktree_path = Path(branch_worktree_result.stdout.strip())
+        assert worktree_path.exists()
+
+        ambiguous_delete = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete", "ws"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert ambiguous_delete.returncode == 1
+        assert (
+            "ambiguous delete target: ws. use --workspace-only or --worktree-only"
+            in ambiguous_delete.stderr
+        )
+
+        delete_workspace_only = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete", "ws", "--workspace-only"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert delete_workspace_only.returncode == 0
+        assert "deleted workspace metadata: ws" in delete_workspace_only.stdout
+        assert worktree_path.exists()
+
+        delete_worktree_only = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete", "ws", "--worktree-only"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert delete_worktree_only.returncode == 0
+        assert "deleted tracked worktree: ws" in delete_worktree_only.stdout
+        assert not worktree_path.exists()

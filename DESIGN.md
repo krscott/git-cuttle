@@ -7,6 +7,15 @@ workspaces. A workspace is a branch created from an n-way merge of parent
 branches. Users can do post-merge work on that workspace branch, then later
 refresh the merge and rebase post-merge commits onto the refreshed result.
 
+## Design Priorities
+
+In descending order, this project optimizes for:
+
+1. Correctness
+2. Reliability
+3. Convenience
+4. Speed
+
 ## Architecture
 
 1. **CLI layer** (`git_cuttle/cli.py`, `git_cuttle/__main__.py`)
@@ -73,6 +82,9 @@ refresh the merge and rebase post-merge commits onto the refreshed result.
 - `gitcuttle delete [workspace-or-branch]`
   - Removes tracked worktree path and tracked metadata when present.
   - Removes workspace metadata/ref when target is a workspace.
+  - Supports `--workspace-only` and `--worktree-only` for explicit targeting.
+  - If both targets exist but are not the same tracked workspace pair, delete
+    fails with an ambiguity error and requires explicit targeting.
 - `gitcuttle status`
   - Shows current tracked workspace or tracked branch worktree state.
 

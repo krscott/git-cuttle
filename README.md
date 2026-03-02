@@ -22,9 +22,11 @@ optional post-merge commits where you continue work.
   - Pull each parent branch from remote then run `absorb`.
 - `gitcuttle list`
   - List tracked workspaces and tracked single-branch worktrees.
-- `gitcuttle delete [workspace]`
-  - Delete tracked metadata and remove managed worktree paths for the current
-    branch or named workspace/branch.
+- `gitcuttle delete [workspace-or-branch] [--workspace-only | --worktree-only]`
+  - Delete tracked metadata for the current branch or named workspace/branch.
+  - If both a workspace and a tracked worktree resolve to the same name but are
+    not the same logical tracked workspace pair, delete fails and requires
+    explicit `--workspace-only` or `--worktree-only`.
 - `gitcuttle status`
   - Show status for the current tracked workspace or tracked branch worktree.
 
