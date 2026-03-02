@@ -223,11 +223,19 @@ def _is_workspace_tracked_worktree_pair(
     )
 
 
-def _delete_tracked_worktree_entry(tracked_worktree: TrackedWorktree) -> None:
-    metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
+def _delete_tracked_worktree_entry(
+    target_name: str, tracked_worktree: TrackedWorktree
+) -> None:
+    if tracked_worktree.branch != target_name:
+        raise GitCuttleError(
+            "tracked worktree metadata mismatch: "
+            f"requested {target_name}, but metadata points to {tracked_worktree.branch}"
+        )
+
+    metadata_path = tracked_worktree_metadata_path(target_name)
     remove_tracked_worktree_path(tracked_worktree)
     delete_tracked_worktree(
-        tracked_worktree.branch,
+        target_name,
         metadata_path=metadata_path,
     )
 
@@ -258,12 +266,14 @@ def _delete_workspace_only(
     return f"deleted workspace metadata: {target_workspace.name}"
 
 
-def _delete_worktree_only(tracked_worktree: TrackedWorktree | None) -> str:
+def _delete_worktree_only(
+    target_name: str, tracked_worktree: TrackedWorktree | None
+) -> str:
     if tracked_worktree is None:
         raise GitCuttleError("tracked worktree not found")
 
-    _delete_tracked_worktree_entry(tracked_worktree)
-    return f"deleted tracked worktree: {tracked_worktree.branch}"
+    _delete_tracked_worktree_entry(target_name, tracked_worktree)
+    return f"deleted tracked worktree: {target_name}"
 
 
 def _delete_workspace_or_worktree(
@@ -288,7 +298,7 @@ def _delete_workspace_or_worktree(
         )
 
     if tracked_worktree is not None:
-        _delete_tracked_worktree_entry(tracked_worktree)
+        _delete_tracked_worktree_entry(target_name, tracked_worktree)
 
     if target_workspace is not None:
         delete_workspace(target_workspace.name)
@@ -298,7 +308,7 @@ def _delete_workspace_or_worktree(
     if target_workspace is not None:
         return f"deleted workspace metadata: {target_workspace.name}"
     if tracked_worktree is not None:
-        return f"deleted tracked worktree: {tracked_worktree.branch}"
+        return f"deleted tracked worktree: {target_name}"
 
     raise GitCuttleError("workspace or tracked worktree not found")
 
@@ -393,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif args.worktree_only:
                 result_message = _delete_worktree_only(
+                    target_name=target_name,
                     tracked_worktree=tracked_worktree,
                 )
             else:
