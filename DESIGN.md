@@ -13,11 +13,15 @@ It is intentionally scoped to what exists in code today.
 - metadata schema, validation, migration, and atomic persistence helpers
 - workspace path derivation helpers
 - transactional operation primitive for multi-step branch/worktree mutations
+- workspace creation helpers for standard and octopus branches
 - remote ahead/behind status resolution helpers for tracked workspaces
 - list table rendering helpers with unknown-status markers
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
 `absorb`) are planned but not yet implemented end-to-end in the CLI.
+
+The `new` command behavior is partially implemented as library helpers in
+`git_cuttle/new.py` but is not yet wired to CLI subcommands.
 
 ## Runtime Flow
 
@@ -125,6 +129,20 @@ Implemented guarantees:
   to the same directory name
 
 These helpers are tested and ready for future command wiring.
+
+## Workspace Creation Helpers
+
+`git_cuttle/new.py` currently provides library-level workspace creation flows:
+
+- `create_standard_workspace(...)`: validates base ref, creates a branch,
+  creates a worktree, and persists metadata as `kind="standard"`.
+- `create_octopus_workspace(...)`: requires at least two parent refs,
+  creates a new branch from the first parent, creates a worktree, performs an
+  octopus merge commit with remaining parents in argument order, and persists
+  metadata as `kind="octopus"` with ordered `octopus_parents`.
+
+Both flows persist tracked workspace metadata using canonical repo identity and
+derived workspace path rules.
 
 ## Remote Status Helpers
 
