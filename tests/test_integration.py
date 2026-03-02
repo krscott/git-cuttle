@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -301,6 +302,143 @@ def test_cli_delete_worktree_only_succeeds_from_deleted_worktree_cwd() -> None:
         assert list_result.returncode == 0
         assert "no tracked workspaces or worktrees" in list_result.stdout
         assert not worktree_path.exists()
+
+
+@pytest.mark.integration
+def test_cli_list_reports_invalid_tracked_worktree_metadata() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        repo = Path(tmp_dir) / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
+        tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
+        tracked_dir.mkdir(parents=True, exist_ok=True)
+        (tracked_dir / "invalid.json").write_text("{not-json", encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "invalid tracked worktree metadata file" in result.stderr
+        assert "Traceback" not in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_delete_worktree_only_rejects_metadata_path_branch_mismatch() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+        _git(repo, "checkout", "main")
+
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        create_a_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-a",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_a_result.returncode == 0
+        feature_a_path = Path(create_a_result.stdout.strip())
+        assert feature_a_path.exists()
+
+        create_b_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-b",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_b_result.returncode == 0
+        feature_b_path = Path(create_b_result.stdout.strip())
+        assert feature_b_path.exists()
+
+        git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
+        tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
+        feature_a_metadata = (
+            tracked_dir / f"{hashlib.sha256('feature-a'.encode()).hexdigest()}.json"
+        )
+
+        payload = json.loads(feature_a_metadata.read_text(encoding="utf-8"))
+        payload["path"] = str(feature_b_path)
+        feature_a_metadata.write_text(json.dumps(payload), encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "delete",
+                "feature-a",
+                "--worktree-only",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+        assert result.returncode == 1
+        assert "tracked worktree metadata mismatch" in result.stderr
+        assert feature_a_path.exists()
+        assert feature_b_path.exists()
 
 
 @pytest.mark.integration

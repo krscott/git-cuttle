@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import asdict, dataclass
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Literal, cast
 
@@ -55,16 +56,46 @@ def _tracked_worktree_path(branch: str) -> Path:
 
 
 def _load_tracked_worktree(path: Path) -> TrackedWorktree:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    kind = str(payload["kind"])
-    if kind not in {"branch", "workspace"}:
-        raise RuntimeError(f"invalid tracked worktree kind: {kind}")
-    workspace_name = payload.get("workspace_name")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (JSONDecodeError, OSError) as exc:
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: {exc}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: expected object"
+        )
+    payload_dict = cast(dict[str, object], payload)
+
+    branch_raw = payload_dict.get("branch")
+    path_raw = payload_dict.get("path")
+    kind_raw = payload_dict.get("kind")
+    workspace_name = payload_dict.get("workspace_name")
+
+    if not isinstance(branch_raw, str) or not branch_raw:
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: invalid branch"
+        )
+    if not isinstance(path_raw, str) or not path_raw:
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: invalid path"
+        )
+    if not isinstance(kind_raw, str) or kind_raw not in {"branch", "workspace"}:
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: invalid kind"
+        )
+    if workspace_name is not None and not isinstance(workspace_name, str):
+        raise GitCuttleError(
+            f"invalid tracked worktree metadata file: {path}: invalid workspace_name"
+        )
+
     return TrackedWorktree(
-        branch=str(payload["branch"]),
-        path=str(payload["path"]),
-        kind=cast(TrackedWorktreeKind, kind),
-        workspace_name=None if workspace_name is None else str(workspace_name),
+        branch=branch_raw,
+        path=path_raw,
+        kind=cast(TrackedWorktreeKind, kind_raw),
+        workspace_name=workspace_name,
     )
 
 
@@ -247,6 +278,18 @@ def remove_tracked_worktree_path(entry: TrackedWorktree) -> None:
     if not path.exists():
         return
 
-    if not _path_is_registered_worktree(path):
+    registered_branch: str | None = None
+    for worktree in list_git_worktrees():
+        if _paths_equal(worktree.path, path):
+            registered_branch = worktree.branch
+            break
+
+    if registered_branch is None:
         raise GitCuttleError(f"managed path exists but is not a git worktree: {path}")
+    if registered_branch != entry.branch:
+        raise GitCuttleError(
+            "tracked worktree metadata mismatch: "
+            f"branch {entry.branch} points to {path}, but path is checked out as "
+            f"{registered_branch}"
+        )
     remove_git_worktree(path)
