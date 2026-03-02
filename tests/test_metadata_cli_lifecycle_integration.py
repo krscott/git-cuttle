@@ -34,6 +34,17 @@ def _run_cli(
     )
 
 
+def _canonical_git_dir(repo: Path) -> Path:
+    git_dir = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    ).stdout.strip()
+    return (repo / git_dir).resolve(strict=False)
+
+
 @pytest.mark.integration
 def test_cli_list_does_not_create_tracking_metadata(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
@@ -74,14 +85,7 @@ def test_cli_mutating_command_migrates_existing_metadata(tmp_path: Path) -> None
     repo.mkdir()
     _init_repo(repo)
 
-    git_dir = subprocess.run(
-        ["git", "rev-parse", "--git-dir"],
-        check=True,
-        capture_output=True,
-        text=True,
-        cwd=repo,
-    ).stdout.strip()
-    canonical_git_dir = (repo / git_dir).resolve(strict=False)
+    canonical_git_dir = _canonical_git_dir(repo)
 
     xdg_data_home = tmp_path / "xdg"
     metadata_dir = xdg_data_home / "gitcuttle"
@@ -121,6 +125,101 @@ def test_cli_mutating_command_migrates_existing_metadata(tmp_path: Path) -> None
     backups = sorted(metadata_dir.glob("workspaces.json.bak.*"))
     assert len(backups) == 1
     assert backups[0].read_text() == original_text
+
+
+@pytest.mark.integration
+def test_cli_mutating_command_rejects_noncanonical_repo_identity_key(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    canonical_git_dir = _canonical_git_dir(repo)
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_dir = xdg_data_home / "gitcuttle"
+    metadata_dir.mkdir(parents=True)
+    metadata_path = metadata_dir / "workspaces.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "repos": {
+                    f"{canonical_git_dir}-mismatch": {
+                        "git_dir": str(canonical_git_dir),
+                        "repo_root": str(repo.resolve(strict=False)),
+                        "default_remote": None,
+                        "tracked_at": "2026-03-01T00:00:00+00:00",
+                        "updated_at": "2026-03-01T00:00:00+00:00",
+                        "workspaces": {},
+                    }
+                },
+            },
+            indent=2,
+        )
+    )
+
+    env = dict(os.environ)
+    env["XDG_DATA_HOME"] = str(xdg_data_home)
+
+    result = _run_cli(cwd=repo, args=["update"], env=env)
+
+    assert result.returncode != 0
+    assert "repo key must match canonical repo.git_dir realpath" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_mutating_command_rejects_workspace_branch_key_mismatch(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    canonical_git_dir = _canonical_git_dir(repo)
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_dir = xdg_data_home / "gitcuttle"
+    metadata_dir.mkdir(parents=True)
+    metadata_path = metadata_dir / "workspaces.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "repos": {
+                    str(canonical_git_dir): {
+                        "git_dir": str(canonical_git_dir),
+                        "repo_root": str(repo.resolve(strict=False)),
+                        "default_remote": None,
+                        "tracked_at": "2026-03-01T00:00:00+00:00",
+                        "updated_at": "2026-03-01T00:00:00+00:00",
+                        "workspaces": {
+                            "feature/wrong": {
+                                "branch": "feature/right",
+                                "worktree_path": str(tmp_path / "worktrees" / "feature-right"),
+                                "tracked_remote": None,
+                                "kind": "standard",
+                                "base_ref": "main",
+                                "octopus_parents": [],
+                                "created_at": "2026-03-01T00:00:00+00:00",
+                                "updated_at": "2026-03-01T00:00:00+00:00",
+                            }
+                        },
+                    }
+                },
+            },
+            indent=2,
+        )
+    )
+
+    env = dict(os.environ)
+    env["XDG_DATA_HOME"] = str(xdg_data_home)
+
+    result = _run_cli(cwd=repo, args=["update"], env=env)
+
+    assert result.returncode != 0
+    assert "workspace key must match workspace.branch exactly" in result.stderr
 
 
 @pytest.mark.integration

@@ -12,7 +12,7 @@ Each story includes implementation work and user-visible automated coverage.
   `--destination` paths, and validates persisted metadata remains keyed by the
   original unsanitized branch names.
 
-- [ ] [P1] Story: Add integration-first coverage for metadata schema invariants.
+- [x] [P1] Story: Add integration-first coverage for metadata schema invariants.
   The integration matrix still points key persistent-data requirements to unit
   tests (`tests/test_metadata_manager.py`). Add black-box CLI integration cases
   that exercise canonical repo identity and schema invariant failures through
