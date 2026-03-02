@@ -128,7 +128,8 @@ These helpers are tested and ready for future command wiring.
 ## Remote Status Helpers
 
 `git_cuttle/remote_status.py` computes ahead/behind status for tracked
-workspaces against their configured upstream remote refs.
+workspaces against their configured upstream remote refs and resolves pull
+request state metadata for GitHub remotes.
 
 Implemented behavior:
 
@@ -136,6 +137,11 @@ Implemented behavior:
 - return unknown status when local branch or remote-tracking ref is missing
 - compute ahead/behind counts using `git rev-list --left-right --count`
 - provide per-workspace and per-repo status mapping helpers
+- resolve PR state/title/url by branch head via `gh pr list --head <branch>`
+- map PR states to prune-compatible values (`open`, `closed`, `merged`,
+  `unknown`, `unavailable`)
+- mark PR metadata as unavailable when the remote is non-GitHub, `gh` is
+  missing, or CLI output cannot be parsed safely
 - provide a `RemoteStatusCache` with a default 60-second TTL for list-style
   repeated status lookups
 

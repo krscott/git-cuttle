@@ -1,10 +1,15 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from git_cuttle.metadata_manager import RepoMetadata, WorkspaceMetadata
 from git_cuttle.remote_status import (
+    PullRequestStatus,
     RemoteAheadBehindStatus,
     RemoteStatusCache,
+    pull_request_status_for_repo,
+    pull_request_status_for_workspace,
     remote_ahead_behind_for_repo,
     remote_ahead_behind_for_workspace,
 )
@@ -201,3 +206,184 @@ def test_remote_status_cache_refreshes_after_ttl(tmp_path: Path) -> None:
     assert calls["count"] == 2
     assert first["feature"].ahead == 1
     assert second["feature"].ahead == 2
+
+
+def test_pull_request_status_for_workspace_returns_unknown_without_upstream(
+    tmp_path: Path,
+) -> None:
+    status = pull_request_status_for_workspace(
+        repo_root=tmp_path,
+        workspace=_workspace("feature", tracked_remote=None),
+        default_remote=None,
+    )
+
+    assert status.state == "unknown"
+    assert status.title is None
+    assert status.url is None
+    assert not status.known
+
+
+def test_pull_request_status_for_workspace_reads_open_pr_from_gh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        _ = cwd
+        if args == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="git@github.com:acme/repo.git\n")
+        if args[:3] == ["gh", "pr", "list"]:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='[{"state":"OPEN","title":"Add feature","url":"https://github.com/acme/repo/pull/42"}]',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    status = pull_request_status_for_workspace(
+        repo_root=tmp_path,
+        workspace=_workspace("feature", tracked_remote="origin"),
+        default_remote="origin",
+    )
+
+    assert status == PullRequestStatus(
+        branch="feature",
+        upstream_ref="origin/feature",
+        state="open",
+        title="Add feature",
+        url="https://github.com/acme/repo/pull/42",
+    )
+    assert status.known
+
+
+def test_pull_request_status_for_workspace_returns_unknown_when_no_pr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        _ = cwd
+        if args == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+        if args[:3] == ["gh", "pr", "list"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]")
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    status = pull_request_status_for_workspace(
+        repo_root=tmp_path,
+        workspace=_workspace("feature", tracked_remote="origin"),
+        default_remote="origin",
+    )
+
+    assert status.state == "unknown"
+    assert status.title is None
+    assert status.url is None
+
+
+def test_pull_request_status_for_workspace_is_unavailable_without_gh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        _ = cwd
+        if args == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+        if args[:3] == ["gh", "pr", "list"]:
+            raise FileNotFoundError("gh")
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    status = pull_request_status_for_workspace(
+        repo_root=tmp_path,
+        workspace=_workspace("feature", tracked_remote="origin"),
+        default_remote="origin",
+    )
+
+    assert status.state == "unavailable"
+    assert status.title is None
+    assert status.url is None
+
+
+def test_pull_request_status_for_repo_maps_each_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = RepoMetadata(
+        git_dir=(tmp_path / "repo.git").resolve(strict=False),
+        repo_root=tmp_path.resolve(strict=False),
+        default_remote="origin",
+        tracked_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+        workspaces={
+            "feature-a": _workspace("feature-a", tracked_remote="origin"),
+            "feature-b": _workspace("feature-b", tracked_remote="origin"),
+        },
+    )
+
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        _ = cwd
+        if args == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+        if args[:3] == ["gh", "pr", "list"] and "feature-a" in args:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='[{"state":"MERGED","title":"A","url":"https://github.com/acme/repo/pull/1"}]',
+            )
+        if args[:3] == ["gh", "pr", "list"] and "feature-b" in args:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='[{"state":"CLOSED","title":"B","url":"https://github.com/acme/repo/pull/2"}]',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    statuses = pull_request_status_for_repo(repo=repo)
+
+    assert statuses["feature-a"].state == "merged"
+    assert statuses["feature-b"].state == "closed"
