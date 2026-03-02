@@ -49,7 +49,7 @@
 
 ## Output and UX Contracts
 
-- [ ] Implement actionable guidance messages for all blocked/error states.
+- [x] Implement actionable guidance messages for all blocked/error states.
 - [x] Implement `--destination` output contract (path-only stdout mode).
 - [ ] Implement human-readable dry-run plans and machine-readable `--json` plans.
 

@@ -1,9 +1,20 @@
 import argparse
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 
+from git_cuttle.errors import AppError
 from git_cuttle.lib import Options
+
+
+class ErrorHandlingArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        raise AppError(
+            code="invalid-arguments",
+            message="invalid command arguments",
+            details=message,
+            guidance=("run `gitcuttle --help` to view valid usage",),
+        )
 
 
 def add_destination_flag(parser: argparse.ArgumentParser) -> None:
@@ -23,7 +34,7 @@ class CliOpts:
 
     @staticmethod
     def parse_args() -> "CliOpts":
-        parser = argparse.ArgumentParser()
+        parser = ErrorHandlingArgumentParser()
 
         parser.add_argument("name", nargs="?", default="World", help="Your name")
         add_destination_flag(parser)

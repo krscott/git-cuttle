@@ -15,14 +15,14 @@ def main() -> None:
     setproctitle("gitcuttle")
     load_dotenv(find_dotenv(usecwd=True))
 
-    cli_opts = CliOpts.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if cli_opts.verbose else logging.INFO,
-        format="%(message)s",
-    )
-
     try:
+        cli_opts = CliOpts.parse_args()
+
+        logging.basicConfig(
+            level=logging.DEBUG if cli_opts.verbose else logging.INFO,
+            format="%(message)s",
+        )
+
         run(cli_opts.app_opts)
     except AppError as error:
         print(

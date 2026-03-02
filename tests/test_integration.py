@@ -210,3 +210,17 @@ def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) ->
     )
     assert "details: detected state marker: MERGE_HEAD" in result.stderr
     assert "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_invalid_arguments_show_actionable_guidance() -> None:
+    result = subprocess.run(
+        ["gitcuttle", "--not-a-real-flag"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "error[invalid-arguments]: invalid command arguments" in result.stderr
+    assert "details: unrecognized arguments: --not-a-real-flag" in result.stderr
+    assert "hint: run `gitcuttle --help` to view valid usage" in result.stderr
