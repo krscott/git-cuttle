@@ -10,3 +10,10 @@ Nice-to-have improvements discovered during PR review.
 
 - [ ] Add a focused `make review` (or script) target that runs matrix lint,
   key integration subsets, and DESIGN contract sanity checks in one command.
+
+- [ ] Add a matrix lint rule that flags references to non-integration tests in
+  `INTEGRATION_TEST_MATRIX.md` (for example rows that point at unit-only files).
+
+- [ ] Add a CI job that regenerates and uploads a DESIGN compliance report
+  artifact (covered/planned counts by section) to make review regressions
+  easier to spot.
