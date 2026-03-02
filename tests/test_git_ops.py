@@ -74,11 +74,21 @@ def test_get_merge_base(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
 def test_list_remote_branch_matches_uses_exact_branch_part(
     monkeypatch: MonkeyPatch,
 ) -> None:
+    calls: list[list[str]] = []
+
     def _fake_run_git(
         args: list[str], check: bool = True
     ) -> subprocess.CompletedProcess[str]:
-        assert args == ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
+        calls.append(args)
         assert check is True
+        if args == ["remote"]:
+            return subprocess.CompletedProcess(
+                args=["git", *args],
+                returncode=0,
+                stdout="origin\nfork\n",
+                stderr="",
+            )
+        assert args == ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
         return subprocess.CompletedProcess(
             args=["git", *args],
             returncode=0,
@@ -97,3 +107,37 @@ def test_list_remote_branch_matches_uses_exact_branch_part(
         "fork/feature/x",
         "origin/feature/x",
     ]
+    assert calls == [
+        ["remote"],
+        ["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
+    ]
+
+
+def test_list_remote_branch_matches_supports_remote_names_with_slash(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def _fake_run_git(
+        args: list[str], check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        assert check is True
+        if args == ["remote"]:
+            return subprocess.CompletedProcess(
+                args=["git", *args],
+                returncode=0,
+                stdout="origin\nfoo/bar\n",
+                stderr="",
+            )
+
+        assert args == ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=0,
+            stdout=(
+                "origin/HEAD\n" "origin/feat\n" "foo/bar/feat\n" "foo/bar/nested/feat\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("git_cuttle.git_ops.run_git", _fake_run_git)
+
+    assert list_remote_branch_matches("feat") == ["foo/bar/feat", "origin/feat"]

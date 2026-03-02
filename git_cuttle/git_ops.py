@@ -91,15 +91,22 @@ def branch_exists_local(branch: str) -> bool:
 
 
 def list_remote_branch_matches(branch: str) -> list[str]:
+    remote_result = run_git(["remote"])
+    remotes = [
+        line.strip() for line in remote_result.stdout.splitlines() if line.strip()
+    ]
     result = run_git(["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
     matches: list[str] = []
     for line in result.stdout.splitlines():
         ref_name = line.strip()
         if not ref_name or ref_name.endswith("/HEAD"):
             continue
-        _, separator, branch_name = ref_name.partition("/")
-        if separator and branch_name == branch:
-            matches.append(ref_name)
+
+        for remote in remotes:
+            prefix = f"{remote}/"
+            if ref_name.startswith(prefix) and ref_name[len(prefix) :] == branch:
+                matches.append(ref_name)
+                break
     return sorted(matches)
 
 

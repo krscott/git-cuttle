@@ -29,6 +29,7 @@ from git_cuttle.worktree_tracking import (
     list_tracked_worktrees,
     precheck_worktree_target,
     remove_tracked_worktree_path,
+    save_tracked_worktree,
 )
 
 
@@ -143,6 +144,7 @@ def _show_list() -> int:
         return 0
 
     tracked_by_branch = {tracked.branch: tracked for tracked in tracked_worktrees}
+    workspace_merge_branches = {workspace.merge_branch for workspace in workspaces}
 
     for workspace in workspaces:
         branches = ", ".join(workspace.branches)
@@ -156,6 +158,13 @@ def _show_list() -> int:
 
     for tracked in tracked_worktrees:
         if tracked.kind == "workspace":
+            if tracked.branch in workspace_merge_branches:
+                continue
+            workspace_name = tracked.workspace_name or tracked.branch
+            print(
+                f"{tracked.branch} [orphan-workspace-worktree]: "
+                f"workspace={workspace_name} path={tracked.path}"
+            )
             continue
         print(f"{tracked.branch} [branch]: path={tracked.path}")
 
@@ -295,6 +304,21 @@ def main(argv: list[str] | None = None) -> int:
                     raise GitCuttleError("workspace not found")
                 assert target_workspace is not None
                 delete_workspace(target_workspace.name)
+                if (
+                    tracked_worktree is not None
+                    and _is_workspace_tracked_worktree_pair(
+                        workspace=target_workspace,
+                        tracked_worktree=tracked_worktree,
+                    )
+                ):
+                    save_tracked_worktree(
+                        TrackedWorktree(
+                            branch=tracked_worktree.branch,
+                            path=tracked_worktree.path,
+                            kind="branch",
+                            workspace_name=None,
+                        )
+                    )
                 print(f"deleted workspace metadata: {target_workspace.name}")
                 return 0
 

@@ -515,6 +515,107 @@ def test_cli_worktree_multi_branch_tracks_and_deletes() -> None:
 
 
 @pytest.mark.integration
+def test_cli_delete_workspace_only_keeps_worktree_listed() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        create_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-a",
+                "feature-b",
+                "--name",
+                "ws",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_result.returncode == 0
+        worktree_path = Path(create_result.stdout.strip())
+        assert worktree_path.exists()
+
+        workspace_only_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete", "ws", "--workspace-only"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert workspace_only_result.returncode == 0
+        assert "deleted workspace metadata: ws" in workspace_only_result.stdout
+
+        list_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert list_result.returncode == 0
+        assert "ws [workspace]" not in list_result.stdout
+        assert f"ws [branch]: path={worktree_path}" in list_result.stdout
+
+        status_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "status"],
+            cwd=worktree_path,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert status_result.returncode == 0
+        assert "branch: ws" in status_result.stdout
+        assert "type: tracked worktree" in status_result.stdout
+
+        delete_worktree_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "delete", "ws", "--worktree-only"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert delete_worktree_result.returncode == 0
+        assert "deleted tracked worktree: ws" in delete_worktree_result.stdout
+        assert not worktree_path.exists()
+
+
+@pytest.mark.integration
 def test_cli_worktree_multi_branch_precheck_prevents_partial_workspace() -> None:
     project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
