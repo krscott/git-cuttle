@@ -76,7 +76,7 @@ implementation work and user-visible automated test coverage.
 
 ## PR Review Follow-ups
 
-- [ ] [P0] Story: Support branch-name omission in `gitcuttle new` per DESIGN.
+- [x] [P0] Story: Support branch-name omission in `gitcuttle new` per DESIGN.
   Allow `gitcuttle new` without `-b/--branch`, generate a random inverse-hex
   workspace branch name, and ensure destination/output + metadata behavior stay
   consistent with explicit branch mode. Add CLI integration tests for omitted

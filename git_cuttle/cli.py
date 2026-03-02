@@ -51,7 +51,6 @@ class CliOpts:
         new_parser.add_argument(
             "-b",
             "--branch",
-            required=True,
             help="new branch name to create",
         )
         new_parser.add_argument(

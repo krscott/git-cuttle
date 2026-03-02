@@ -1,4 +1,5 @@
 import subprocess
+import secrets
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,8 @@ from git_cuttle.metadata_manager import (
     WorkspacesMetadata,
 )
 from git_cuttle.workspace_paths import derive_workspace_path
+
+_HEX_TO_INVERSE_ALPHA = str.maketrans("0123456789abcdef", "zyxwvutsrqponmlk")
 
 
 def resolve_base_ref(*, cwd: Path, base_ref: str | None) -> str:
@@ -35,6 +38,33 @@ def resolve_base_ref(*, cwd: Path, base_ref: str | None) -> str:
             guidance=("pass an explicit base ref as `gitcuttle new <base> -b <name>`",),
         )
     return current_commit
+
+
+def resolve_workspace_branch_name(
+    *, cwd: Path, requested_branch: str | None, remote: str | None
+) -> str:
+    if requested_branch is not None:
+        return requested_branch
+
+    for _ in range(32):
+        candidate = _generate_workspace_branch_name()
+        if not _branch_exists(cwd=cwd, branch=candidate, remote=remote):
+            return candidate
+
+    raise AppError(
+        code="branch-name-generation-failed",
+        message="failed to generate a unique workspace branch name",
+        guidance=(
+            "retry the command",
+            "or pass an explicit name with `gitcuttle new -b <name>`",
+        ),
+    )
+
+
+def _generate_workspace_branch_name() -> str:
+    random_hex = secrets.token_hex(4)
+    inverse_hex = random_hex.translate(_HEX_TO_INVERSE_ALPHA)
+    return f"workspace-{inverse_hex}"
 
 
 def create_standard_workspace(

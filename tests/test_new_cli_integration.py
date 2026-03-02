@@ -1,5 +1,6 @@
 import os
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -107,3 +108,77 @@ def test_cli_new_octopus_from_worktree_context_creates_workspace(
     tracked_repo = next(iter(metadata.repos.values()))
     assert "integration/from-worktree" in tracked_repo.workspaces
     assert tracked_repo.workspaces["integration/from-worktree"].kind == "octopus"
+
+
+@pytest.mark.integration
+def test_cli_new_without_branch_generates_workspace_branch_name(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        ["gitcuttle", "new", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 0
+    destination = pathlib.Path(result.stdout.strip())
+    assert destination.is_dir()
+
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
+    tracked_repo = next(iter(metadata.repos.values()))
+    generated_branch = next(iter(tracked_repo.workspaces.keys()))
+    assert re.fullmatch(r"workspace-[k-z]{8}", generated_branch) is not None
+
+
+@pytest.mark.integration
+def test_cli_new_without_branch_generates_unique_names_across_runs(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    first = subprocess.run(
+        ["gitcuttle", "new", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    second = subprocess.run(
+        ["gitcuttle", "new", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert first.returncode == 0
+    assert second.returncode == 0
+
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
+    tracked_repo = next(iter(metadata.repos.values()))
+    generated_branches = list(tracked_repo.workspaces.keys())
+
+    assert len(generated_branches) == 2
+    assert len(set(generated_branches)) == 2
+    assert all(
+        re.fullmatch(r"workspace-[k-z]{8}", branch) is not None
+        for branch in generated_branches
+    )
