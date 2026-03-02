@@ -1,14 +1,22 @@
-from pathlib import Path
+import json
 import subprocess
-from typing import Protocol
+from pathlib import Path
+from typing import Callable, Protocol
 
 from git_cuttle.absorb import absorb_octopus_workspace
+from git_cuttle.delete import delete_workspace
 from git_cuttle.errors import AppError
-from git_cuttle.git_ops import canonical_git_dir, in_git_repo, in_progress_operation, repo_root
-from git_cuttle.list_output import render_workspace_table, rows_for_repo
+from git_cuttle.git_ops import (
+    canonical_git_dir,
+    in_git_repo,
+    in_progress_operation,
+    repo_root,
+)
 from git_cuttle.lib import Options
+from git_cuttle.list_output import render_workspace_table, rows_for_repo
 from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata
 from git_cuttle.new import create_octopus_workspace, create_standard_workspace
+from git_cuttle.prune import PrStatus, prune_workspaces
 from git_cuttle.remote_status import (
     PullRequestStatusCache,
     RemoteStatusCache,
@@ -16,7 +24,6 @@ from git_cuttle.remote_status import (
     remote_ahead_behind_for_repo,
 )
 from git_cuttle.update import update_non_octopus_workspace, update_octopus_workspace
-
 
 MUTATING_COMMANDS = frozenset({"new", "delete", "prune", "update", "absorb"})
 REMOTE_STATUS_CACHE = RemoteStatusCache()
@@ -80,25 +87,51 @@ def _dispatch_command(
     metadata_manager: RepoTracker,
 ) -> None:
     if command_name == "new":
-        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
         _run_new(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "list":
-        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
         _run_list(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "delete":
-        _run_delete(opts=opts)
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
+        _run_delete(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "prune":
-        _run_prune(opts=opts)
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
+        _run_prune(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "update":
-        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
         _run_update(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "absorb":
-        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        manager = (
+            metadata_manager
+            if isinstance(metadata_manager, MetadataManager)
+            else MetadataManager()
+        )
         _run_absorb(opts=opts, cwd=cwd, metadata_manager=manager)
         return
 
@@ -182,15 +215,15 @@ def _run_list(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) ->
                 for row in rows
             ]
         }
-        import json
-
         print(json.dumps(payload))
         return
 
     print(render_workspace_table(rows))
 
 
-def _tracked_repo_for_list(*, cwd: Path, metadata_manager: MetadataManager) -> RepoMetadata | None:
+def _tracked_repo_for_list(
+    *, cwd: Path, metadata_manager: MetadataManager
+) -> RepoMetadata | None:
     repo_git_dir = canonical_git_dir(cwd)
     if repo_git_dir is None:
         return None
@@ -199,24 +232,54 @@ def _tracked_repo_for_list(*, cwd: Path, metadata_manager: MetadataManager) -> R
     return metadata.repos.get(str(repo_git_dir))
 
 
-def _run_delete(*, opts: Options) -> None:
-    if opts.dry_run:
-        if opts.json_output:
-            print('{"command":"delete","status":"planned"}')
-            return
-        print("delete:planned")
-        return
-    print("delete:invoked")
+def _run_delete(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
+    if opts.branch is None:
+        raise AppError(
+            code="invalid-arguments",
+            message="delete command requires a branch name",
+            guidance=("pass `gitcuttle delete <branch>`",),
+        )
+
+    rendered = delete_workspace(
+        cwd=cwd,
+        branch=opts.branch,
+        metadata_manager=metadata_manager,
+        force=opts.force,
+        dry_run=opts.dry_run,
+        json_output=opts.json_output,
+    )
+    if rendered is not None:
+        print(rendered)
 
 
-def _run_prune(*, opts: Options) -> None:
-    if opts.dry_run:
-        if opts.json_output:
-            print('{"command":"prune","status":"planned"}')
-            return
-        print("prune:planned")
-        return
-    print("prune:invoked")
+def _run_prune(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
+    tracked_repo = _tracked_repo_for_cwd(cwd=cwd, metadata_manager=metadata_manager)
+    pull_request_statuses = PULL_REQUEST_STATUS_CACHE.statuses_for_repo(
+        repo=tracked_repo,
+        resolver=lambda repo: pull_request_status_for_repo(repo=repo),
+    )
+
+    pr_status_by_branch: dict[str, PrStatus | None] = {}
+    for branch, status in pull_request_statuses.items():
+        state: PrStatus | None
+        if status.state == "draft":
+            state = "open"
+        elif status.state in {"open", "closed", "merged", "unknown", "unavailable"}:
+            state = status.state
+        else:
+            state = None
+        pr_status_by_branch[branch] = state
+
+    rendered = prune_workspaces(
+        cwd=cwd,
+        metadata_manager=metadata_manager,
+        pr_status_by_branch=pr_status_by_branch,
+        force=opts.force,
+        dry_run=opts.dry_run,
+        json_output=opts.json_output,
+    )
+    if rendered is not None:
+        print(rendered)
 
 
 def _run_update(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
@@ -241,10 +304,14 @@ def _run_update(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) 
         workspace=workspace,
         default_remote=repo.default_remote,
     )
-    print(f"updated standard workspace {standard_result.branch} onto {standard_result.upstream_ref}")
+    print(
+        f"updated standard workspace {standard_result.branch} onto {standard_result.upstream_ref}"
+    )
 
 
-def _tracked_repo_for_cwd(*, cwd: Path, metadata_manager: MetadataManager) -> RepoMetadata:
+def _tracked_repo_for_cwd(
+    *, cwd: Path, metadata_manager: MetadataManager
+) -> RepoMetadata:
     repo_git_dir = canonical_git_dir(cwd)
     if repo_git_dir is None:
         raise AppError(
@@ -323,13 +390,19 @@ def _run_absorb(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) 
         raise AppError(
             code="invalid-absorb-options",
             message="cannot combine an explicit target parent with interactive mode",
-            guidance=("use either `gitcuttle absorb <parent>` or `gitcuttle absorb -i`",),
+            guidance=(
+                "use either `gitcuttle absorb <parent>` or `gitcuttle absorb -i`",
+            ),
         )
 
     repo = _tracked_repo_for_cwd(cwd=cwd, metadata_manager=metadata_manager)
     workspace = _current_workspace(cwd=cwd, repo=repo)
 
-    chooser = _interactive_target_selector(repo_root=repo.repo_root) if opts.interactive else None
+    chooser = (
+        _interactive_target_selector(repo_root=repo.repo_root)
+        if opts.interactive
+        else None
+    )
     result = absorb_octopus_workspace(
         repo_root=repo.repo_root,
         workspace=workspace,
@@ -345,7 +418,9 @@ def _run_absorb(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) 
     print(f"absorbed {len(result.absorbed_commits)} commit(s) from {result.branch}")
 
 
-def _interactive_target_selector(*, repo_root: Path):
+def _interactive_target_selector(
+    *, repo_root: Path
+) -> Callable[[str, tuple[str, ...]], str]:
     def choose_target(commit: str, parents: tuple[str, ...]) -> str:
         subject = _git_stdout(
             repo_root=repo_root,
@@ -364,7 +439,9 @@ def _interactive_target_selector(*, repo_root: Path):
             raise AppError(
                 code="interactive-selection-failed",
                 message="interactive absorb selection was interrupted",
-                guidance=("rerun with `-i` and provide a selection or pass an explicit parent",),
+                guidance=(
+                    "rerun with `-i` and provide a selection or pass an explicit parent",
+                ),
             ) from exc
 
         selected_parent: str | None = None

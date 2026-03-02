@@ -1,6 +1,7 @@
-import pytest
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from git_cuttle.git_ops import (
     add_worktree,
@@ -115,7 +116,9 @@ def test_transaction_raises_rollback_error_when_rollback_fails() -> None:
         )
     )
 
-    with pytest.raises(TransactionRollbackError, match="rollback was partial") as exc_info:
+    with pytest.raises(
+        TransactionRollbackError, match="rollback was partial"
+    ) as exc_info:
         transaction.run()
 
     assert calls == [

@@ -1,7 +1,7 @@
 """Validate README output snippets against real CLI behavior."""
 
-import pathlib
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -29,7 +29,7 @@ def test_readme_new_command_invocation_output(tmp_path: pathlib.Path) -> None:
     env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
     result = subprocess.run(
-        ["gitcuttle", "new", "-b", "feature/readme"],
+        ["gitcuttle", "new", "-b", "feature/demo"],
         capture_output=True,
         text=True,
         cwd=repo,
@@ -37,7 +37,7 @@ def test_readme_new_command_invocation_output(tmp_path: pathlib.Path) -> None:
     )
 
     assert result.returncode == 0
-    assert "created workspace 'feature/readme' at" in result.stdout
+    assert "created workspace 'feature/demo' at" in result.stdout
     assert "hint: cd" in result.stdout
     assert result.stderr == ""
 
@@ -51,7 +51,7 @@ def test_readme_destination_output_for_new(tmp_path: pathlib.Path) -> None:
     env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
     result = subprocess.run(
-        ["gitcuttle", "new", "-b", "feature/readme", "--destination"],
+        ["gitcuttle", "new", "-b", "feature/demo", "--destination"],
         capture_output=True,
         text=True,
         cwd=repo,
@@ -113,4 +113,7 @@ def test_readme_in_progress_error_snippet(tmp_path: pathlib.Path) -> None:
         "error[git-operation-in-progress]: repository has an in-progress git operation"
     )
     assert stderr_lines[1] == "details: detected state marker: MERGE_HEAD"
-    assert stderr_lines[2] == "hint: resolve or abort the git operation and rerun gitcuttle"
+    assert (
+        stderr_lines[2]
+        == "hint: resolve or abort the git operation and rerun gitcuttle"
+    )

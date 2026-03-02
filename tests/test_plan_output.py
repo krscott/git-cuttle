@@ -1,6 +1,11 @@
 import json
 
-from git_cuttle.plan_output import DryRunPlan, PlanAction, render_human_plan, render_json_plan
+from git_cuttle.plan_output import (
+    DryRunPlan,
+    PlanAction,
+    render_human_plan,
+    render_json_plan,
+)
 
 
 def test_render_human_plan_lists_actions_and_warnings() -> None:

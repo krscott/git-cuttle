@@ -1,7 +1,8 @@
 """Black-box integration tests for CLI subcommand architecture."""
 
-import pathlib
+import json
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -84,21 +85,48 @@ def test_cli_per_command_invocation_paths(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
-    command_expectations = [
-        (["delete", "feature/demo", "--dry-run"], "delete:planned\n"),
-        (["prune", "--dry-run"], "prune:planned\n"),
-    ]
+    new_result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/demo", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert new_result.returncode == 0
 
-    list_result = subprocess.run(["gitcuttle", "list"], capture_output=True, text=True, cwd=repo)
+    list_result = subprocess.run(
+        ["gitcuttle", "list"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
     assert list_result.returncode == 0
     assert "REPO" in list_result.stdout
-    assert "(no tracked workspaces)" in list_result.stdout
+    assert "feature/demo" in list_result.stdout
 
-    for args, expected in command_expectations:
-        result = subprocess.run(["gitcuttle", *args], capture_output=True, text=True, cwd=repo)
-        assert result.returncode == 0
-        assert result.stdout == expected
+    delete_result = subprocess.run(
+        ["gitcuttle", "delete", "feature/demo", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert delete_result.returncode == 0
+    assert "Dry-run plan for `delete`:" in delete_result.stdout
+
+    prune_result = subprocess.run(
+        ["gitcuttle", "prune", "--dry-run"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert prune_result.returncode == 0
+    assert "Dry-run plan for `prune`:" in prune_result.stdout
 
 
 @pytest.mark.integration
@@ -106,32 +134,52 @@ def test_cli_json_invocation_paths(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    new_result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/demo", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert new_result.returncode == 0
 
     list_result = subprocess.run(
         ["gitcuttle", "list", "--json"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
     )
     delete_result = subprocess.run(
         ["gitcuttle", "delete", "feature/demo", "--dry-run", "--json"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
     )
     prune_result = subprocess.run(
         ["gitcuttle", "prune", "--dry-run", "--json"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
     )
 
     assert list_result.returncode == 0
-    assert list_result.stdout.strip() == '{"workspaces":[]}'
+    list_payload = json.loads(list_result.stdout)
+    assert list_payload["workspaces"]
     assert delete_result.returncode == 0
-    assert delete_result.stdout.strip() == '{"command":"delete","status":"planned"}'
+    delete_payload = json.loads(delete_result.stdout)
+    assert delete_payload["command"] == "delete"
+    assert delete_payload["dry_run"] is True
+    assert delete_payload["action_count"] >= 1
     assert prune_result.returncode == 0
-    assert prune_result.stdout.strip() == '{"command":"prune","status":"planned"}'
+    prune_payload = json.loads(prune_result.stdout)
+    assert prune_payload["command"] == "prune"
+    assert prune_payload["dry_run"] is True
 
 
 @pytest.mark.integration
@@ -143,8 +191,14 @@ def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
         cwd=tmp_path,
     )
     assert result.returncode != 0
-    assert "error[not-in-git-repo]: gitcuttle must be run from within a git repository" in result.stderr
-    assert "hint: change to your repository root or one of its worktrees and retry" in result.stderr
+    assert (
+        "error[not-in-git-repo]: gitcuttle must be run from within a git repository"
+        in result.stderr
+    )
+    assert (
+        "hint: change to your repository root or one of its worktrees and retry"
+        in result.stderr
+    )
 
 
 @pytest.mark.integration
@@ -178,4 +232,6 @@ def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) ->
         in result.stderr
     )
     assert "details: detected state marker: MERGE_HEAD" in result.stderr
-    assert "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
+    assert (
+        "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
+    )

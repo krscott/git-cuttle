@@ -1,8 +1,8 @@
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import subprocess
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Literal, cast
 from urllib.parse import urlparse
 
@@ -41,11 +41,15 @@ StatusResolver = Callable[[RepoMetadata], dict[str, "RemoteAheadBehindStatus"]]
 PrStatusResolver = Callable[[RepoMetadata], dict[str, "PullRequestStatus"]]
 
 
-def _default_repo_status_resolver(repo: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
+def _default_repo_status_resolver(
+    repo: RepoMetadata,
+) -> dict[str, RemoteAheadBehindStatus]:
     return remote_ahead_behind_for_repo(repo=repo)
 
 
-def _default_repo_pr_status_resolver(repo: RepoMetadata) -> dict[str, PullRequestStatus]:
+def _default_repo_pr_status_resolver(
+    repo: RepoMetadata,
+) -> dict[str, PullRequestStatus]:
     return pull_request_status_for_repo(repo=repo)
 
 
@@ -103,7 +107,9 @@ class PullRequestStatusCache:
         return statuses
 
 
-def remote_ahead_behind_for_repo(*, repo: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
+def remote_ahead_behind_for_repo(
+    *, repo: RepoMetadata
+) -> dict[str, RemoteAheadBehindStatus]:
     statuses: dict[str, RemoteAheadBehindStatus] = {}
     for branch, workspace in repo.workspaces.items():
         statuses[branch] = remote_ahead_behind_for_workspace(
@@ -131,7 +137,9 @@ def remote_ahead_behind_for_workspace(
     workspace: WorkspaceMetadata,
     default_remote: str | None,
 ) -> RemoteAheadBehindStatus:
-    upstream_ref = _workspace_upstream_ref(workspace=workspace, default_remote=default_remote)
+    upstream_ref = _workspace_upstream_ref(
+        workspace=workspace, default_remote=default_remote
+    )
     unknown = RemoteAheadBehindStatus(
         branch=workspace.branch,
         upstream_ref=upstream_ref,
@@ -148,7 +156,9 @@ def remote_ahead_behind_for_workspace(
     if not _ref_exists(repo_root=repo_root, ref=remote_ref):
         return unknown
 
-    counts = _ahead_behind_counts(repo_root=repo_root, local_branch=workspace.branch, upstream_ref=upstream_ref)
+    counts = _ahead_behind_counts(
+        repo_root=repo_root, local_branch=workspace.branch, upstream_ref=upstream_ref
+    )
     if counts is None:
         return unknown
 
@@ -167,7 +177,9 @@ def pull_request_status_for_workspace(
     workspace: WorkspaceMetadata,
     default_remote: str | None,
 ) -> PullRequestStatus:
-    upstream_ref = _workspace_upstream_ref(workspace=workspace, default_remote=default_remote)
+    upstream_ref = _workspace_upstream_ref(
+        workspace=workspace, default_remote=default_remote
+    )
     unknown = PullRequestStatus(
         branch=workspace.branch,
         upstream_ref=upstream_ref,
@@ -182,7 +194,9 @@ def pull_request_status_for_workspace(
     if remote_name is None:
         return unknown
 
-    repo_slug = _github_repo_slug_for_remote(repo_root=repo_root, remote_name=remote_name)
+    repo_slug = _github_repo_slug_for_remote(
+        repo_root=repo_root, remote_name=remote_name
+    )
     if repo_slug is None:
         return PullRequestStatus(
             branch=workspace.branch,
@@ -200,7 +214,9 @@ def pull_request_status_for_workspace(
     )
 
 
-def _workspace_upstream_ref(*, workspace: WorkspaceMetadata, default_remote: str | None) -> str | None:
+def _workspace_upstream_ref(
+    *, workspace: WorkspaceMetadata, default_remote: str | None
+) -> str | None:
     remote_name = workspace.tracked_remote or default_remote
     if remote_name is None:
         return None
@@ -335,7 +351,9 @@ def _pull_request_status_from_gh(
         "CLOSED": "closed",
         "MERGED": "merged",
     }
-    mapped_state = state_map.get(state_raw if isinstance(state_raw, str) else "", "unknown")
+    mapped_state = state_map.get(
+        state_raw if isinstance(state_raw, str) else "", "unknown"
+    )
     if mapped_state == "open" and is_draft_raw is True:
         mapped_state = "draft"
 
@@ -359,9 +377,17 @@ def _ref_exists(*, repo_root: Path, ref: str) -> bool:
     return result.returncode == 0
 
 
-def _ahead_behind_counts(*, repo_root: Path, local_branch: str, upstream_ref: str) -> tuple[int, int] | None:
+def _ahead_behind_counts(
+    *, repo_root: Path, local_branch: str, upstream_ref: str
+) -> tuple[int, int] | None:
     result = subprocess.run(
-        ["git", "rev-list", "--left-right", "--count", f"{local_branch}...{upstream_ref}"],
+        [
+            "git",
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"{local_branch}...{upstream_ref}",
+        ],
         capture_output=True,
         text=True,
         check=False,

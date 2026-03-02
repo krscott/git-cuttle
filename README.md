@@ -5,22 +5,23 @@ existing git repository.
 
 ## Command behavior
 
-- `gitcuttle new -b <branch> [base ...]` creates a new workspace invocation path.
-- `gitcuttle list`, `gitcuttle delete`, `gitcuttle prune`, `gitcuttle update`,
-  and `gitcuttle absorb` are available subcommands.
+- `gitcuttle new -b <branch> [base ...]` creates a new tracked workspace.
+- `gitcuttle list` shows tracked workspaces and remote/PR status.
+- `gitcuttle delete`, `gitcuttle prune`, `gitcuttle update`, and
+  `gitcuttle absorb` execute workflow operations.
 - `gitcuttle --verbose` (or `-v`, or `GITCUTTLE_VERBOSE=1`) enables debug logs.
 
 ## Quick examples
 
-Create a workspace command invocation:
+Create a workspace:
 
 ```bash
 gitcuttle new -b feature/demo
 ```
 
 ```text
-created workspace 'feature/readme' at /tmp/.../feature-readme
-hint: cd /tmp/.../feature-readme
+created workspace 'feature/demo' at /tmp/.../feature-demo
+hint: cd /tmp/.../feature-demo
 ```
 
 Path-only output for shell navigation helpers:
@@ -30,7 +31,7 @@ gitcuttle new -b feature/demo --destination
 ```
 
 ```text
-/tmp/.../feature-readme
+/tmp/.../feature-demo
 ```
 
 List invocation:
@@ -40,7 +41,8 @@ gitcuttle list
 ```
 
 ```text
-list:invoked
+REPO  BRANCH  DIRTY  AHEAD  BEHIND  PR  DESCRIPTION  WORKTREE
+(no tracked workspaces)
 ```
 
 Dry-run delete plan:
@@ -50,7 +52,10 @@ gitcuttle delete feature/demo --dry-run
 ```
 
 ```text
-delete:planned
+Dry-run plan for `delete`:
+1. delete-worktree: /tmp/.../feature-demo
+2. delete-branch: feature/demo
+3. untrack-workspace: feature/demo
 ```
 
 ## Blocked states and troubleshooting

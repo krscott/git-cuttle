@@ -5,10 +5,16 @@ import pytest
 
 from git_cuttle.errors import AppError
 from git_cuttle.metadata_manager import MetadataManager
-from git_cuttle.new import create_octopus_workspace, create_standard_workspace, resolve_base_ref
+from git_cuttle.new import (
+    create_octopus_workspace,
+    create_standard_workspace,
+    resolve_base_ref,
+)
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         capture_output=True,
@@ -37,7 +43,9 @@ def test_resolve_base_ref_defaults_to_current_commit(tmp_path: Path) -> None:
     _git(cwd=repo, args=["add", "feature.txt"])
     _git(cwd=repo, args=["commit", "-m", "feature commit"])
 
-    expected_commit = _git(cwd=repo, args=["rev-parse", "--verify", "HEAD"]).stdout.strip()
+    expected_commit = _git(
+        cwd=repo, args=["rev-parse", "--verify", "HEAD"]
+    ).stdout.strip()
 
     resolved = resolve_base_ref(cwd=repo, base_ref=None)
 
@@ -45,7 +53,9 @@ def test_resolve_base_ref_defaults_to_current_commit(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_create_standard_workspace_creates_branch_worktree_and_metadata(tmp_path: Path) -> None:
+def test_create_standard_workspace_creates_branch_worktree_and_metadata(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -62,7 +72,9 @@ def test_create_standard_workspace_creates_branch_worktree_and_metadata(tmp_path
     assert destination.exists()
     assert destination.is_dir()
 
-    branch_result = _git(cwd=repo, args=["rev-parse", "--verify", "feature/new-workspace"], check=False)
+    branch_result = _git(
+        cwd=repo, args=["rev-parse", "--verify", "feature/new-workspace"], check=False
+    )
     assert branch_result.returncode == 0
 
     metadata = metadata_manager.read()
@@ -99,7 +111,9 @@ def test_create_standard_workspace_rejects_existing_branch(tmp_path: Path) -> No
 
 
 @pytest.mark.integration
-def test_create_standard_workspace_rejects_branch_existing_on_upstream(tmp_path: Path) -> None:
+def test_create_standard_workspace_rejects_branch_existing_on_upstream(
+    tmp_path: Path,
+) -> None:
     remote = tmp_path / "remote.git"
     _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
 
@@ -132,7 +146,9 @@ def test_create_standard_workspace_rejects_branch_existing_on_upstream(tmp_path:
 
 
 @pytest.mark.integration
-def test_create_octopus_workspace_creates_n_way_merge_and_tracks_parent_order(tmp_path: Path) -> None:
+def test_create_octopus_workspace_creates_n_way_merge_and_tracks_parent_order(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -162,10 +178,14 @@ def test_create_octopus_workspace_creates_n_way_merge_and_tracks_parent_order(tm
     assert destination.exists()
     assert destination.is_dir()
 
-    parent_commits = _git(
-        cwd=repo,
-        args=["show", "-s", "--format=%P", "integration/main-release-hotfix"],
-    ).stdout.strip().split()
+    parent_commits = (
+        _git(
+            cwd=repo,
+            args=["show", "-s", "--format=%P", "integration/main-release-hotfix"],
+        )
+        .stdout.strip()
+        .split()
+    )
     expected_parents = [
         _git(cwd=repo, args=["rev-parse", "--verify", parent]).stdout.strip()
         for parent in ["main", "release", "hotfix"]
@@ -181,7 +201,9 @@ def test_create_octopus_workspace_creates_n_way_merge_and_tracks_parent_order(tm
 
 
 @pytest.mark.integration
-def test_create_octopus_workspace_requires_at_least_two_parent_refs(tmp_path: Path) -> None:
+def test_create_octopus_workspace_requires_at_least_two_parent_refs(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)

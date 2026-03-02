@@ -1,12 +1,17 @@
+import subprocess
 from dataclasses import replace
 from pathlib import Path
-import subprocess
 from typing import Literal
 
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, repo_root
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
-from git_cuttle.plan_output import DryRunPlan, PlanAction, render_human_plan, render_json_plan
+from git_cuttle.plan_output import (
+    DryRunPlan,
+    PlanAction,
+    render_human_plan,
+    render_json_plan,
+)
 
 DeleteBlockReason = Literal[
     "current-workspace",
@@ -33,7 +38,9 @@ def current_branch(*, cwd: Path) -> str | None:
     return branch
 
 
-def delete_block_reason(*, current: str | None, target: str, force: bool) -> DeleteBlockReason | None:
+def delete_block_reason(
+    *, current: str | None, target: str, force: bool
+) -> DeleteBlockReason | None:
     if current == target:
         return "current-workspace"
     if force:
@@ -87,7 +94,11 @@ def delete_workspace(
             guidance=("switch to a different branch and rerun",),
         )
 
-    if not force and workspace.worktree_path.exists() and _worktree_has_uncommitted_changes(cwd=workspace.worktree_path):
+    if (
+        not force
+        and workspace.worktree_path.exists()
+        and _worktree_has_uncommitted_changes(cwd=workspace.worktree_path)
+    ):
         raise AppError(
             code="workspace-dirty",
             message="workspace has uncommitted changes",
@@ -101,7 +112,9 @@ def delete_workspace(
             default_remote=repo.default_remote,
             branch=workspace.branch,
         )
-        if upstream_ref is None or not _ref_exists(repo_root=repo_root_dir, ref=f"refs/remotes/{upstream_ref}"):
+        if upstream_ref is None or not _ref_exists(
+            repo_root=repo_root_dir, ref=f"refs/remotes/{upstream_ref}"
+        ):
             raise AppError(
                 code="no-upstream",
                 message="workspace has no upstream branch configured",
@@ -112,7 +125,11 @@ def delete_workspace(
                 ),
             )
 
-        ahead = _ahead_count(repo_root=repo_root_dir, local_branch=workspace.branch, upstream_ref=upstream_ref)
+        ahead = _ahead_count(
+            repo_root=repo_root_dir,
+            local_branch=workspace.branch,
+            upstream_ref=upstream_ref,
+        )
         if ahead is None:
             raise AppError(
                 code="no-upstream",
@@ -131,7 +148,9 @@ def delete_workspace(
                 guidance=("push commits or rerun with --force",),
             )
 
-    plan = _build_delete_plan(branch=branch, force=force, worktree_path=workspace.worktree_path)
+    plan = _build_delete_plan(
+        branch=branch, force=force, worktree_path=workspace.worktree_path
+    )
     if dry_run:
         return render_json_plan(plan) if json_output else render_human_plan(plan)
 
@@ -148,7 +167,9 @@ def delete_workspace(
     updated_repo = replace(repo, workspaces=updated_workspaces)
     updated_repos = dict(metadata.repos)
     updated_repos[repo_key] = updated_repo
-    metadata_manager.write(WorkspacesMetadata(version=metadata.version, repos=updated_repos))
+    metadata_manager.write(
+        WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+    )
     return None
 
 
@@ -165,7 +186,9 @@ def _build_delete_plan(*, branch: str, force: bool, worktree_path: Path) -> DryR
     return DryRunPlan(command="delete", actions=tuple(actions))
 
 
-def _workspace_upstream_ref(*, tracked_remote: str | None, default_remote: str | None, branch: str) -> str | None:
+def _workspace_upstream_ref(
+    *, tracked_remote: str | None, default_remote: str | None, branch: str
+) -> str | None:
     remote_name = tracked_remote or default_remote
     if remote_name is None:
         return None
@@ -183,9 +206,17 @@ def _ref_exists(*, repo_root: Path, ref: str) -> bool:
     return result.returncode == 0
 
 
-def _ahead_count(*, repo_root: Path, local_branch: str, upstream_ref: str) -> int | None:
+def _ahead_count(
+    *, repo_root: Path, local_branch: str, upstream_ref: str
+) -> int | None:
     result = subprocess.run(
-        ["git", "rev-list", "--left-right", "--count", f"{local_branch}...{upstream_ref}"],
+        [
+            "git",
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"{local_branch}...{upstream_ref}",
+        ],
         capture_output=True,
         text=True,
         check=False,

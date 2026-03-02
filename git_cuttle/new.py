@@ -1,11 +1,15 @@
+import subprocess
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-import subprocess
 
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, repo_root
-from git_cuttle.metadata_manager import MetadataManager, WorkspaceMetadata, WorkspacesMetadata
+from git_cuttle.metadata_manager import (
+    MetadataManager,
+    WorkspaceMetadata,
+    WorkspacesMetadata,
+)
 from git_cuttle.workspace_paths import derive_workspace_path
 
 
@@ -269,7 +273,9 @@ def _add_worktree(*, cwd: Path, branch: str, destination: Path) -> None:
         )
 
 
-def _create_octopus_merge_commit(*, cwd: Path, branch: str, merge_parents: list[str]) -> None:
+def _create_octopus_merge_commit(
+    *, cwd: Path, branch: str, merge_parents: list[str]
+) -> None:
     result = subprocess.run(
         [
             "git",

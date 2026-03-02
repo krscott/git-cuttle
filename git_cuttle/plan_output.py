@@ -25,7 +25,9 @@ def render_human_plan(plan: DryRunPlan) -> str:
             if action.details is None:
                 lines.append(f"{index}. {action.op}: {action.target}")
             else:
-                lines.append(f"{index}. {action.op}: {action.target} ({action.details})")
+                lines.append(
+                    f"{index}. {action.op}: {action.target} ({action.details})"
+                )
 
     if plan.warnings:
         lines.append("Warnings:")

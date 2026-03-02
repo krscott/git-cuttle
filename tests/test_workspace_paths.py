@@ -36,7 +36,9 @@ def test_derive_workspace_path_uses_xdg_data_home(
     )
 
 
-def test_collision_appends_deterministic_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collision_appends_deterministic_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("XDG_DATA_HOME", "/tmp/xdg")
     git_dir = Path("/repos/demo/.git")
     branch = "feature/a"

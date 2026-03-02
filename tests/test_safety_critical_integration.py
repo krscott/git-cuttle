@@ -13,12 +13,23 @@ from git_cuttle.git_ops import (
     restore_branch_from_backup_ref,
     set_branch_head,
 )
-from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata, WorkspaceMetadata
+from git_cuttle.metadata_manager import (
+    MetadataManager,
+    WorkspaceMetadata,
+    WorkspacesMetadata,
+)
 from git_cuttle.remote_status import remote_ahead_behind_for_workspace
-from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionRollbackError, TransactionStep
+from git_cuttle.transaction import (
+    Transaction,
+    TransactionExecutionError,
+    TransactionRollbackError,
+    TransactionStep,
+)
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -96,7 +107,9 @@ def test_transaction_rolls_back_mutations_on_failure(tmp_path: Path) -> None:
     transaction.add_step(
         TransactionStep(
             name="create-worktree",
-            apply=lambda: add_worktree(branch="feature/demo", path=worktree_path, cwd=repo),
+            apply=lambda: add_worktree(
+                branch="feature/demo", path=worktree_path, cwd=repo
+            ),
             rollback=lambda: remove_worktree(path=worktree_path, cwd=repo, force=True),
         )
     )
@@ -127,7 +140,11 @@ def test_transaction_rolls_back_mutations_on_failure(tmp_path: Path) -> None:
 
     backup_ref_result = _git(
         cwd=repo,
-        args=["rev-parse", "--verify", backup_ref_for_branch(txn_id=txn_id, branch="feature/demo")],
+        args=[
+            "rev-parse",
+            "--verify",
+            backup_ref_for_branch(txn_id=txn_id, branch="feature/demo"),
+        ],
         check=False,
     )
     assert backup_ref_result.returncode != 0
@@ -160,7 +177,9 @@ def test_transaction_rollback_failure_reports_partial_state(tmp_path: Path) -> N
         )
     )
 
-    with pytest.raises(TransactionRollbackError, match="rollback was partial") as exc_info:
+    with pytest.raises(
+        TransactionRollbackError, match="rollback was partial"
+    ) as exc_info:
         transaction.run()
 
     assert exc_info.value.recovery_commands() == ("rm -f feature.txt",)
@@ -211,7 +230,9 @@ def test_delete_force_does_not_override_current_workspace_block(tmp_path: Path) 
     assert active_branch == "feature/current"
 
     assert (
-        delete_block_reason(current=active_branch, target="feature/current", force=False)
+        delete_block_reason(
+            current=active_branch, target="feature/current", force=False
+        )
         == "current-workspace"
     )
     assert (

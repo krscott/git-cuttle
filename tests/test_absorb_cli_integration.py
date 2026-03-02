@@ -4,10 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata, WorkspacesMetadata
+from git_cuttle.metadata_manager import (
+    MetadataManager,
+    RepoMetadata,
+    WorkspaceMetadata,
+    WorkspacesMetadata,
+)
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -89,7 +96,9 @@ def _setup_octopus_repo(tmp_path: Path) -> tuple[Path, WorkspaceMetadata]:
     _git(cwd=repo, args=["commit", "-m", "main v1"])
 
     _git(cwd=repo, args=["checkout", "-b", "integration/main-release", "main"])
-    _git(cwd=repo, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+    _git(
+        cwd=repo, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"]
+    )
     return repo, _workspace_metadata(branch="integration/main-release", worktree=repo)
 
 
@@ -121,19 +130,27 @@ def test_cli_absorb_explicit_target_moves_commits_to_parent(tmp_path: Path) -> N
     _git(cwd=repo, args=["add", "release-only.txt"])
     _git(cwd=repo, args=["commit", "-m", "release-only"])
 
-    merge_commit = _git(cwd=repo, args=["rev-parse", "--verify", "integration/main-release~1"]).stdout.strip()
+    merge_commit = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release~1"]
+    ).stdout.strip()
 
     xdg_data_home = tmp_path / "xdg"
     metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
-    _write_repo_metadata(metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace)
+    _write_repo_metadata(
+        metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace
+    )
 
     result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=["release"])
 
     assert result.returncode == 0
     assert result.stdout == "absorbed 1 commit(s) from integration/main-release\n"
-    new_head = _git(cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]).stdout.strip()
+    new_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
+    ).stdout.strip()
     assert new_head == merge_commit
-    release_head_subject = _git(cwd=repo, args=["log", "--format=%s", "-n", "1", "release"]).stdout.strip()
+    release_head_subject = _git(
+        cwd=repo, args=["log", "--format=%s", "-n", "1", "release"]
+    ).stdout.strip()
     assert release_head_subject == "release-only"
 
 
@@ -147,14 +164,20 @@ def test_cli_absorb_interactive_mode_uses_selected_parent(tmp_path: Path) -> Non
 
     xdg_data_home = tmp_path / "xdg"
     metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
-    _write_repo_metadata(metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace)
+    _write_repo_metadata(
+        metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace
+    )
 
-    result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=["-i"], input_text="1\n")
+    result = _run_absorb(
+        cwd=repo, xdg_data_home=xdg_data_home, args=["-i"], input_text="1\n"
+    )
 
     assert result.returncode == 0
     assert "choose parent branch for" in result.stdout
     assert "absorbed 1 commit(s) from integration/main-release" in result.stdout
-    main_head_subject = _git(cwd=repo, args=["log", "--format=%s", "-n", "1", "main"]).stdout.strip()
+    main_head_subject = _git(
+        cwd=repo, args=["log", "--format=%s", "-n", "1", "main"]
+    ).stdout.strip()
     assert main_head_subject == "main-only"
 
 
@@ -168,10 +191,18 @@ def test_cli_absorb_heuristic_mode_reports_ambiguity(tmp_path: Path) -> None:
 
     xdg_data_home = tmp_path / "xdg"
     metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
-    _write_repo_metadata(metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace)
+    _write_repo_metadata(
+        metadata_path=metadata_path, repo=repo, default_remote=None, workspace=workspace
+    )
 
     result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=[])
 
     assert result.returncode == 2
-    assert "error[absorb-target-uncertain]: could not infer a high-confidence absorb target" in result.stderr
-    assert "hint: rerun with an explicit parent branch or interactive mode (-i)" in result.stderr
+    assert (
+        "error[absorb-target-uncertain]: could not infer a high-confidence absorb target"
+        in result.stderr
+    )
+    assert (
+        "hint: rerun with an explicit parent branch or interactive mode (-i)"
+        in result.stderr
+    )

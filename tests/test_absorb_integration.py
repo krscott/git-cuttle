@@ -8,7 +8,9 @@ from git_cuttle.errors import AppError
 from git_cuttle.metadata_manager import WorkspaceMetadata
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -56,12 +58,16 @@ def _setup_octopus_repo(tmp_path: Path) -> tuple[Path, WorkspaceMetadata]:
     _git(cwd=repo, args=["commit", "-m", "main v1"])
 
     _git(cwd=repo, args=["checkout", "-b", "integration/main-release", "main"])
-    _git(cwd=repo, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+    _git(
+        cwd=repo, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"]
+    )
     return repo, _workspace_metadata(branch="integration/main-release", worktree=repo)
 
 
 @pytest.mark.integration
-def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(tmp_path: Path) -> None:
+def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(
+    tmp_path: Path,
+) -> None:
     repo, workspace = _setup_octopus_repo(tmp_path)
 
     (repo / "release-only-1.txt").write_text("r1\n")
@@ -72,8 +78,12 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(tmp_pa
     _git(cwd=repo, args=["add", "release-only-2.txt"])
     _git(cwd=repo, args=["commit", "-m", "release-only-2"])
 
-    old_head = _git(cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]).stdout.strip()
-    merge_commit = _git(cwd=repo, args=["rev-parse", "--verify", "integration/main-release~2"]).stdout.strip()
+    old_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
+    ).stdout.strip()
+    merge_commit = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release~2"]
+    ).stdout.strip()
 
     result = absorb_octopus_workspace(
         repo_root=repo,
@@ -81,11 +91,16 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(tmp_pa
         target_parent="release",
     )
 
-    new_head = _git(cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]).stdout.strip()
+    new_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
+    ).stdout.strip()
     assert old_head != new_head
     assert new_head == merge_commit
     assert result.changed
-    assert [entry.target_parent for entry in result.absorbed_commits] == ["release", "release"]
+    assert [entry.target_parent for entry in result.absorbed_commits] == [
+        "release",
+        "release",
+    ]
 
     release_log = _git(
         cwd=repo,
@@ -120,7 +135,9 @@ def test_absorb_interactive_mode_uses_selected_parent(tmp_path: Path) -> None:
     assert len(result.absorbed_commits) == 1
     assert result.absorbed_commits[0].target_parent == "main"
 
-    main_log = _git(cwd=repo, args=["log", "--format=%s", "-n", "1", "main"]).stdout.strip()
+    main_log = _git(
+        cwd=repo, args=["log", "--format=%s", "-n", "1", "main"]
+    ).stdout.strip()
     assert main_log == "picked-main"
 
 

@@ -21,7 +21,9 @@ def _init_repo(path: pathlib.Path) -> None:
 
 
 @pytest.mark.integration
-def test_cli_new_standard_from_repo_root_creates_workspace_and_metadata(tmp_path: pathlib.Path) -> None:
+def test_cli_new_standard_from_repo_root_creates_workspace_and_metadata(
+    tmp_path: pathlib.Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -41,13 +43,17 @@ def test_cli_new_standard_from_repo_root_creates_workspace_and_metadata(tmp_path
     destination = pathlib.Path(result.stdout.strip())
     assert destination.is_dir()
 
-    metadata = MetadataManager(path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json").read()
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
     tracked_repo = next(iter(metadata.repos.values()))
     assert "feature/root" in tracked_repo.workspaces
 
 
 @pytest.mark.integration
-def test_cli_new_octopus_from_worktree_context_creates_workspace(tmp_path: pathlib.Path) -> None:
+def test_cli_new_octopus_from_worktree_context_creates_workspace(
+    tmp_path: pathlib.Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -65,13 +71,26 @@ def test_cli_new_octopus_from_worktree_context_creates_workspace(tmp_path: pathl
     subprocess.run(["git", "checkout", "main"], check=True, cwd=repo)
 
     existing_worktree = tmp_path / "existing-release"
-    subprocess.run(["git", "worktree", "add", str(existing_worktree), "release"], check=True, cwd=repo)
+    subprocess.run(
+        ["git", "worktree", "add", str(existing_worktree), "release"],
+        check=True,
+        cwd=repo,
+    )
 
     env = os.environ.copy()
     env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
     result = subprocess.run(
-        ["gitcuttle", "new", "main", "release", "hotfix", "-b", "integration/from-worktree", "--destination"],
+        [
+            "gitcuttle",
+            "new",
+            "main",
+            "release",
+            "hotfix",
+            "-b",
+            "integration/from-worktree",
+            "--destination",
+        ],
         capture_output=True,
         text=True,
         cwd=existing_worktree,
@@ -82,7 +101,9 @@ def test_cli_new_octopus_from_worktree_context_creates_workspace(tmp_path: pathl
     destination = pathlib.Path(result.stdout.strip())
     assert destination.is_dir()
 
-    metadata = MetadataManager(path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json").read()
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
     tracked_repo = next(iter(metadata.repos.values()))
     assert "integration/from-worktree" in tracked_repo.workspaces
     assert tracked_repo.workspaces["integration/from-worktree"].kind == "octopus"

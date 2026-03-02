@@ -1,7 +1,6 @@
 import subprocess
 from pathlib import Path
 
-
 BACKUP_REF_PREFIX = "refs/gitcuttle/txn"
 
 
@@ -60,10 +59,29 @@ def git_dir(cwd: Path | None = None) -> Path | None:
 
 
 def canonical_git_dir(cwd: Path | None = None) -> Path | None:
-    git_dir_path = git_dir(cwd)
+    git_dir_path = git_common_dir(cwd)
     if git_dir_path is None:
         return None
     return git_dir_path.resolve(strict=False)
+
+
+def git_common_dir(cwd: Path | None = None) -> Path | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None
+
+    candidate = Path(result.stdout.strip())
+    if candidate.is_absolute():
+        return candidate
+
+    base_dir = cwd or Path.cwd()
+    return (base_dir / candidate).resolve(strict=False)
 
 
 def default_remote_name(cwd: Path | None = None) -> str | None:
@@ -151,7 +169,9 @@ def add_worktree(*, branch: str, path: Path, cwd: Path | None = None) -> None:
         raise RuntimeError(result.stderr.strip() or f"failed to add worktree {path}")
 
 
-def remove_worktree(*, path: Path, cwd: Path | None = None, force: bool = False) -> None:
+def remove_worktree(
+    *, path: Path, cwd: Path | None = None, force: bool = False
+) -> None:
     command = ["git", "worktree", "remove"]
     if force:
         command.append("--force")
@@ -165,9 +185,7 @@ def remove_worktree(*, path: Path, cwd: Path | None = None, force: bool = False)
         cwd=cwd,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            result.stderr.strip() or f"failed to remove worktree {path}"
-        )
+        raise RuntimeError(result.stderr.strip() or f"failed to remove worktree {path}")
 
 
 def remove_backup_refs(*, txn_id: str, cwd: Path | None = None) -> None:

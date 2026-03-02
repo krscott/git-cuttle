@@ -5,10 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata, WorkspacesMetadata
+from git_cuttle.metadata_manager import (
+    MetadataManager,
+    RepoMetadata,
+    WorkspaceMetadata,
+    WorkspacesMetadata,
+)
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -109,7 +116,9 @@ def test_cli_update_rebases_standard_workspace_onto_upstream(tmp_path: Path) -> 
     _git(cwd=upstream_writer, args=["add", "upstream.txt"])
     _git(cwd=upstream_writer, args=["commit", "-m", "upstream b"])
     _git(cwd=upstream_writer, args=["push", "origin", "feature/update"])
-    upstream_head = _git(cwd=upstream_writer, args=["rev-parse", "--verify", "HEAD"]).stdout.strip()
+    upstream_head = _git(
+        cwd=upstream_writer, args=["rev-parse", "--verify", "HEAD"]
+    ).stdout.strip()
 
     (local / "local.txt").write_text("local c\n")
     _git(cwd=local, args=["add", "local.txt"])
@@ -137,13 +146,20 @@ def test_cli_update_rebases_standard_workspace_onto_upstream(tmp_path: Path) -> 
     result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
 
     assert result.returncode == 0
-    assert "updated standard workspace feature/update onto origin/feature/update" in result.stdout
-    rebased_parent = _git(cwd=local, args=["show", "-s", "--format=%P", "HEAD"]).stdout.strip()
+    assert (
+        "updated standard workspace feature/update onto origin/feature/update"
+        in result.stdout
+    )
+    rebased_parent = _git(
+        cwd=local, args=["show", "-s", "--format=%P", "HEAD"]
+    ).stdout.strip()
     assert rebased_parent == upstream_head
 
 
 @pytest.mark.integration
-def test_cli_update_errors_for_standard_workspace_without_upstream(tmp_path: Path) -> None:
+def test_cli_update_errors_for_standard_workspace_without_upstream(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -171,11 +187,16 @@ def test_cli_update_errors_for_standard_workspace_without_upstream(tmp_path: Pat
     result = _run_update(cwd=repo, xdg_data_home=xdg_data_home)
 
     assert result.returncode == 2
-    assert "error[no-upstream]: workspace has no upstream remote branch configured" in result.stderr
+    assert (
+        "error[no-upstream]: workspace has no upstream remote branch configured"
+        in result.stderr
+    )
 
 
 @pytest.mark.integration
-def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(tmp_path: Path) -> None:
+def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(
+    tmp_path: Path,
+) -> None:
     bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
 
     _git(cwd=local, args=["checkout", "-b", "release"])
@@ -186,7 +207,10 @@ def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(tmp_path: Pat
 
     _git(cwd=local, args=["checkout", "main"])
     _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
-    _git(cwd=local, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
     (local / "post-merge.txt").write_text("local post merge\n")
     _git(cwd=local, args=["add", "post-merge.txt"])
     _git(cwd=local, args=["commit", "-m", "post merge commit"])
@@ -237,13 +261,19 @@ def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(tmp_path: Pat
         cwd=local,
         args=["rev-parse", "--verify", "integration/main-release^"],
     ).stdout.strip()
-    rebuilt_merge_parents = _git(
-        cwd=local,
-        args=["show", "-s", "--format=%P", rebuilt_merge_commit],
-    ).stdout.strip().split()
+    rebuilt_merge_parents = (
+        _git(
+            cwd=local,
+            args=["show", "-s", "--format=%P", rebuilt_merge_commit],
+        )
+        .stdout.strip()
+        .split()
+    )
     expected_parents = [
         _git(cwd=local, args=["rev-parse", "--verify", "origin/main"]).stdout.strip(),
-        _git(cwd=local, args=["rev-parse", "--verify", "origin/release"]).stdout.strip(),
+        _git(
+            cwd=local, args=["rev-parse", "--verify", "origin/release"]
+        ).stdout.strip(),
     ]
 
     assert rebuilt_merge_parents == expected_parents

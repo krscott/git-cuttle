@@ -186,7 +186,9 @@ def test_write_validates_workspace_key_matches_branch(tmp_path: Path) -> None:
                 updated_at=repo.updated_at,
                 workspaces={
                     "feature/wrong": _workspace(
-                        branch="feature/right", path="/wt/feature-right", kind="standard"
+                        branch="feature/right",
+                        path="/wt/feature-right",
+                        kind="standard",
                     )
                 },
             )
@@ -227,7 +229,9 @@ def test_write_validates_workspace_kind_invariants(tmp_path: Path) -> None:
         },
     )
 
-    with pytest.raises(ValueError, match="octopus workspaces must have at least two parents"):
+    with pytest.raises(
+        ValueError, match="octopus workspaces must have at least two parents"
+    ):
         manager.write(invalid)
 
 
@@ -274,7 +278,9 @@ def test_read_migrates_legacy_schema_and_creates_backup(tmp_path: Path) -> None:
 
 def test_read_rejects_newer_schema_version(tmp_path: Path) -> None:
     metadata_path = tmp_path / "workspaces.json"
-    metadata_path.write_text(json.dumps({"version": SCHEMA_VERSION + 1, "repos": {}}, indent=2))
+    metadata_path.write_text(
+        json.dumps({"version": SCHEMA_VERSION + 1, "repos": {}}, indent=2)
+    )
 
     manager = MetadataManager(path=metadata_path)
 

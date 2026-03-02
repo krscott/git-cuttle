@@ -1,13 +1,21 @@
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
 
 from git_cuttle.metadata_manager import RepoMetadata
 from git_cuttle.remote_status import PullRequestStatus, RemoteAheadBehindStatus
 
-
 UNKNOWN_MARKER = "?"
-TABLE_HEADERS = ("REPO", "BRANCH", "DIRTY", "AHEAD", "BEHIND", "PR", "DESCRIPTION", "WORKTREE")
+TABLE_HEADERS = (
+    "REPO",
+    "BRANCH",
+    "DIRTY",
+    "AHEAD",
+    "BEHIND",
+    "PR",
+    "DESCRIPTION",
+    "WORKTREE",
+)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -108,8 +116,14 @@ def _pr_marker(pr: PullRequestStatus | None) -> str:
     return pr.state
 
 
-def _description_for_workspace(*, repo_root: Path, branch: str, pr: PullRequestStatus | None) -> str:
-    if pr is not None and pr.title is not None and pr.state in {"open", "closed", "merged", "draft"}:
+def _description_for_workspace(
+    *, repo_root: Path, branch: str, pr: PullRequestStatus | None
+) -> str:
+    if (
+        pr is not None
+        and pr.title is not None
+        and pr.state in {"open", "closed", "merged", "draft"}
+    ):
         return pr.title
 
     try:

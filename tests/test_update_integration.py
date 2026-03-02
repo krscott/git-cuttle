@@ -8,7 +8,9 @@ from git_cuttle.metadata_manager import WorkspaceMetadata
 from git_cuttle.update import update_non_octopus_workspace, update_octopus_workspace
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -62,7 +64,9 @@ def test_update_non_octopus_rebases_local_commit_onto_upstream(tmp_path: Path) -
     _git(cwd=upstream_writer, args=["add", "upstream.txt"])
     _git(cwd=upstream_writer, args=["commit", "-m", "upstream b"])
     _git(cwd=upstream_writer, args=["push", "origin", "feature/update"])
-    upstream_head = _git(cwd=upstream_writer, args=["rev-parse", "--verify", "HEAD"]).stdout.strip()
+    upstream_head = _git(
+        cwd=upstream_writer, args=["rev-parse", "--verify", "HEAD"]
+    ).stdout.strip()
 
     (local / "local.txt").write_text("local c\n")
     _git(cwd=local, args=["add", "local.txt"])
@@ -85,13 +89,17 @@ def test_update_non_octopus_rebases_local_commit_onto_upstream(tmp_path: Path) -
         default_remote="origin",
     )
 
-    rebased_parent = _git(cwd=local, args=["show", "-s", "--format=%P", "HEAD"]).stdout.strip()
+    rebased_parent = _git(
+        cwd=local, args=["show", "-s", "--format=%P", "HEAD"]
+    ).stdout.strip()
     assert rebased_parent == upstream_head
     assert result.changed
 
 
 @pytest.mark.integration
-def test_update_non_octopus_fails_when_no_upstream_is_configured(tmp_path: Path) -> None:
+def test_update_non_octopus_fails_when_no_upstream_is_configured(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -132,7 +140,10 @@ def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_com
 
     _git(cwd=local, args=["checkout", "main"])
     _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
-    _git(cwd=local, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
     (local / "post-merge.txt").write_text("local post merge\n")
     _git(cwd=local, args=["add", "post-merge.txt"])
     _git(cwd=local, args=["commit", "-m", "post merge commit"])
@@ -175,13 +186,19 @@ def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_com
         cwd=local,
         args=["rev-parse", "--verify", "integration/main-release^"],
     ).stdout.strip()
-    rebuilt_merge_parents = _git(
-        cwd=local,
-        args=["show", "-s", "--format=%P", rebuilt_merge_commit],
-    ).stdout.strip().split()
+    rebuilt_merge_parents = (
+        _git(
+            cwd=local,
+            args=["show", "-s", "--format=%P", rebuilt_merge_commit],
+        )
+        .stdout.strip()
+        .split()
+    )
     expected_parents = [
         _git(cwd=local, args=["rev-parse", "--verify", "origin/main"]).stdout.strip(),
-        _git(cwd=local, args=["rev-parse", "--verify", "origin/release"]).stdout.strip(),
+        _git(
+            cwd=local, args=["rev-parse", "--verify", "origin/release"]
+        ).stdout.strip(),
     ]
 
     assert rebuilt_merge_parents == expected_parents
@@ -192,7 +209,9 @@ def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_com
 
 
 @pytest.mark.integration
-def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp_path: Path) -> None:
+def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(
+    tmp_path: Path,
+) -> None:
     bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
 
     _git(cwd=local, args=["checkout", "-b", "release"])
@@ -203,7 +222,10 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp
 
     _git(cwd=local, args=["checkout", "main"])
     _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
-    _git(cwd=local, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
 
     upstream_writer = tmp_path / "upstream-writer"
     _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
@@ -220,7 +242,9 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp
     _git(cwd=local, args=["add", "release-local-only.txt"])
     _git(cwd=local, args=["commit", "-m", "release local only"])
 
-    local_release_head = _git(cwd=local, args=["rev-parse", "--verify", "release"]).stdout.strip()
+    local_release_head = _git(
+        cwd=local, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
 
     workspace = WorkspaceMetadata(
         branch="integration/main-release",
@@ -239,7 +263,9 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp
         default_remote="origin",
     )
 
-    remote_release_head = _git(cwd=local, args=["rev-parse", "--verify", "origin/release"]).stdout.strip()
+    remote_release_head = _git(
+        cwd=local, args=["rev-parse", "--verify", "origin/release"]
+    ).stdout.strip()
     assert local_release_head != remote_release_head
     assert result.parent_refs == ("origin/main", "origin/release")
 
@@ -247,8 +273,12 @@ def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp
         cwd=local,
         args=["rev-parse", "--verify", "integration/main-release"],
     ).stdout.strip()
-    rebuilt_merge_parents = _git(
-        cwd=local,
-        args=["show", "-s", "--format=%P", rebuilt_parent_commit],
-    ).stdout.strip().split()
+    rebuilt_merge_parents = (
+        _git(
+            cwd=local,
+            args=["show", "-s", "--format=%P", rebuilt_parent_commit],
+        )
+        .stdout.strip()
+        .split()
+    )
     assert rebuilt_merge_parents[1] == remote_release_head

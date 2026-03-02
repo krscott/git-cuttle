@@ -56,7 +56,9 @@ class TransactionRollbackError(RuntimeError):
         return tuple(commands)
 
     def format_partial_state(self) -> str:
-        rolled_back = ", ".join(self.rolled_back_steps) if self.rolled_back_steps else "(none)"
+        rolled_back = (
+            ", ".join(self.rolled_back_steps) if self.rolled_back_steps else "(none)"
+        )
         lines = [
             f"transaction id: {self.txn_id}",
             f"failed step: {self.failed_step_name}",
@@ -77,7 +79,8 @@ class TransactionRollbackError(RuntimeError):
 
     def __str__(self) -> str:
         failed_rollbacks = ", ".join(
-            f"{failure.step_name}: {failure.error}" for failure in self.rollback_failures
+            f"{failure.step_name}: {failure.error}"
+            for failure in self.rollback_failures
         )
         return (
             f"transaction {self.txn_id} failed during step '{self.failed_step_name}' and "

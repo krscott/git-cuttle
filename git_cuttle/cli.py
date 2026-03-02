@@ -69,31 +69,47 @@ class CliOpts:
             help="render output as json",
         )
 
-        delete_parser = subparsers.add_parser("delete", help="delete a tracked workspace")
+        delete_parser = subparsers.add_parser(
+            "delete", help="delete a tracked workspace"
+        )
         delete_parser.add_argument("branch", help="workspace branch to delete")
-        delete_parser.add_argument("--dry-run", action="store_true", help="print plan without mutating")
+        delete_parser.add_argument(
+            "--dry-run", action="store_true", help="print plan without mutating"
+        )
         delete_parser.add_argument(
             "--json",
             dest="json_output",
             action="store_true",
             help="render output as json",
         )
-        delete_parser.add_argument("--force", action="store_true", help="bypass safety checks")
+        delete_parser.add_argument(
+            "--force", action="store_true", help="bypass safety checks"
+        )
 
-        prune_parser = subparsers.add_parser("prune", help="prune stale tracked workspaces")
-        prune_parser.add_argument("--dry-run", action="store_true", help="print plan without mutating")
+        prune_parser = subparsers.add_parser(
+            "prune", help="prune stale tracked workspaces"
+        )
+        prune_parser.add_argument(
+            "--dry-run", action="store_true", help="print plan without mutating"
+        )
         prune_parser.add_argument(
             "--json",
             dest="json_output",
             action="store_true",
             help="render output as json",
         )
-        prune_parser.add_argument("--force", action="store_true", help="bypass safety checks")
+        prune_parser.add_argument(
+            "--force", action="store_true", help="bypass safety checks"
+        )
 
         subparsers.add_parser("update", help="update current workspace")
 
-        absorb_parser = subparsers.add_parser("absorb", help="absorb octopus commits into parent branches")
-        absorb_parser.add_argument("target_parent", nargs="?", default=None, help="target parent branch")
+        absorb_parser = subparsers.add_parser(
+            "absorb", help="absorb octopus commits into parent branches"
+        )
+        absorb_parser.add_argument(
+            "target_parent", nargs="?", default=None, help="target parent branch"
+        )
         absorb_parser.add_argument(
             "-i",
             "--interactive",

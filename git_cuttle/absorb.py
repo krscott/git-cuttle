@@ -1,11 +1,10 @@
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
 from typing import Callable
 
 from git_cuttle.errors import AppError
 from git_cuttle.metadata_manager import WorkspaceMetadata
-
 
 CommitTargetChooser = Callable[[str, tuple[str, ...]], str]
 
@@ -54,9 +53,7 @@ def absorb_octopus_workspace(
             code="invalid-absorb-target",
             message="target parent is not part of the octopus workspace",
             details=target_parent,
-            guidance=(
-                "choose one of the configured octopus parent branches",
-            ),
+            guidance=("choose one of the configured octopus parent branches",),
         )
 
     if interactive and choose_target is None:
@@ -116,7 +113,9 @@ def absorb_octopus_workspace(
                 message="failed to reset octopus branch after absorb",
             )
     finally:
-        if original_branch is not None and original_branch != _current_branch(repo_root=repo_root):
+        if original_branch is not None and original_branch != _current_branch(
+            repo_root=repo_root
+        ):
             _checkout_branch(repo_root=repo_root, branch=original_branch)
 
     after_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
@@ -145,7 +144,9 @@ def _plan_absorb_targets(
             assert chooser is not None
             target = chooser(commit, parents)
         else:
-            target = _heuristic_target_parent(repo_root=repo_root, commit=commit, parents=parents)
+            target = _heuristic_target_parent(
+                repo_root=repo_root, commit=commit, parents=parents
+            )
 
         if target not in parents:
             raise AppError(
@@ -159,16 +160,16 @@ def _plan_absorb_targets(
     return planned
 
 
-def _heuristic_target_parent(*, repo_root: Path, commit: str, parents: tuple[str, ...]) -> str:
+def _heuristic_target_parent(
+    *, repo_root: Path, commit: str, parents: tuple[str, ...]
+) -> str:
     changed_files = _commit_changed_files(repo_root=repo_root, commit=commit)
     if not changed_files:
         raise AppError(
             code="absorb-target-uncertain",
             message="cannot infer absorb target for empty or metadata-only commit",
             details=commit,
-            guidance=(
-                "rerun with an explicit parent branch or interactive mode (-i)",
-            ),
+            guidance=("rerun with an explicit parent branch or interactive mode (-i)",),
         )
 
     scores: dict[str, int] = {}
@@ -183,20 +184,22 @@ def _heuristic_target_parent(*, repo_root: Path, commit: str, parents: tuple[str
     tied = sum(1 for score in scores.values() if score == best_score) > 1
     confidence = best_score / len(changed_files)
     if best_score == 0 or tied or confidence < 0.6:
-        score_details = ", ".join(f"{parent}={score}" for parent, score in sorted(scores.items()))
+        score_details = ", ".join(
+            f"{parent}={score}" for parent, score in sorted(scores.items())
+        )
         raise AppError(
             code="absorb-target-uncertain",
             message="could not infer a high-confidence absorb target",
             details=f"{commit}: {score_details}",
-            guidance=(
-                "rerun with an explicit parent branch or interactive mode (-i)",
-            ),
+            guidance=("rerun with an explicit parent branch or interactive mode (-i)",),
         )
 
     return best_parent
 
 
-def _split_octopus_history(*, repo_root: Path, unique_commits: list[str]) -> tuple[str | None, list[str]]:
+def _split_octopus_history(
+    *, repo_root: Path, unique_commits: list[str]
+) -> tuple[str | None, list[str]]:
     if not unique_commits:
         return None, []
     first_commit = unique_commits[0]
@@ -234,7 +237,9 @@ def _path_exists_at_ref(*, repo_root: Path, ref: str, path: str) -> bool:
     return result.returncode == 0
 
 
-def _octopus_unique_commits(*, repo_root: Path, branch: str, parent_refs: tuple[str, ...]) -> list[str]:
+def _octopus_unique_commits(
+    *, repo_root: Path, branch: str, parent_refs: tuple[str, ...]
+) -> list[str]:
     result = subprocess.run(
         ["git", "rev-list", "--reverse", branch, "--not", *parent_refs],
         capture_output=True,
@@ -254,7 +259,9 @@ def _octopus_unique_commits(*, repo_root: Path, branch: str, parent_refs: tuple[
 
 
 def _is_merge_commit(*, repo_root: Path, commit: str) -> bool:
-    parent_line = _git_stdout(repo_root=repo_root, args=["show", "-s", "--format=%P", commit])
+    parent_line = _git_stdout(
+        repo_root=repo_root, args=["show", "-s", "--format=%P", commit]
+    )
     parent_oids = [parent for parent in parent_line.split() if parent]
     return len(parent_oids) > 1
 

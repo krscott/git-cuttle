@@ -3,10 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from git_cuttle.metadata_manager import MetadataManager, SCHEMA_VERSION
+from git_cuttle.metadata_manager import SCHEMA_VERSION, MetadataManager
 
 
-def _legacy_v0_payload(*, repo_key: str, repo_root: Path, worktree_path: Path) -> dict[str, object]:
+def _legacy_v0_payload(
+    *, repo_key: str, repo_root: Path, worktree_path: Path
+) -> dict[str, object]:
     return {
         "version": 0,
         "repos": {
@@ -68,7 +70,9 @@ def test_read_rejects_invalid_schema_in_metadata_file(tmp_path: Path) -> None:
 
     manager = MetadataManager(path=metadata_path)
 
-    with pytest.raises(ValueError, match="workspace kind must be either 'standard' or 'octopus'"):
+    with pytest.raises(
+        ValueError, match="workspace kind must be either 'standard' or 'octopus'"
+    ):
         manager.read()
 
 

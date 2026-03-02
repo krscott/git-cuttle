@@ -16,7 +16,9 @@ from git_cuttle.remote_status import (
 )
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -65,7 +67,9 @@ def test_remote_ahead_behind_reports_unknown_without_remote(tmp_path: Path) -> N
     assert not status.known
 
 
-def test_remote_ahead_behind_reports_unknown_when_remote_branch_is_missing(tmp_path: Path) -> None:
+def test_remote_ahead_behind_reports_unknown_when_remote_branch_is_missing(
+    tmp_path: Path,
+) -> None:
     remote = tmp_path / "remote.git"
     _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
 
@@ -241,7 +245,9 @@ def test_pull_request_status_for_workspace_reads_open_pr_from_gh(
         _ = check
         _ = cwd
         if args == ["git", "remote", "get-url", "origin"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="git@github.com:acme/repo.git\n")
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="git@github.com:acme/repo.git\n"
+            )
         if args[:3] == ["gh", "pr", "list"]:
             return subprocess.CompletedProcess(
                 args=args,
@@ -285,7 +291,9 @@ def test_pull_request_status_for_workspace_reads_draft_pr_from_gh(
         _ = check
         _ = cwd
         if args == ["git", "remote", "get-url", "origin"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="git@github.com:acme/repo.git\n")
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="git@github.com:acme/repo.git\n"
+            )
         if args[:3] == ["gh", "pr", "list"]:
             return subprocess.CompletedProcess(
                 args=args,
@@ -324,7 +332,9 @@ def test_pull_request_status_for_workspace_returns_unknown_when_no_pr(
         _ = check
         _ = cwd
         if args == ["git", "remote", "get-url", "origin"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="https://github.com/acme/repo.git\n"
+            )
         if args[:3] == ["gh", "pr", "list"]:
             return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]")
         raise AssertionError(f"unexpected command: {args}")
@@ -359,7 +369,9 @@ def test_pull_request_status_for_workspace_is_unavailable_without_gh(
         _ = check
         _ = cwd
         if args == ["git", "remote", "get-url", "origin"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="https://github.com/acme/repo.git\n"
+            )
         if args[:3] == ["gh", "pr", "list"]:
             raise FileNotFoundError("gh")
         raise AssertionError(f"unexpected command: {args}")
@@ -406,7 +418,9 @@ def test_pull_request_status_for_repo_maps_each_workspace(
         _ = check
         _ = cwd
         if args == ["git", "remote", "get-url", "origin"]:
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="https://github.com/acme/repo.git\n")
+            return subprocess.CompletedProcess(
+                args=args, returncode=0, stdout="https://github.com/acme/repo.git\n"
+            )
         if args[:3] == ["gh", "pr", "list"] and "feature-a" in args:
             return subprocess.CompletedProcess(
                 args=args,

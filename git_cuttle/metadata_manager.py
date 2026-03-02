@@ -8,7 +8,6 @@ from typing import Callable, Literal, cast
 
 from git_cuttle.git_ops import canonical_git_dir, default_remote_name, repo_root
 
-
 SCHEMA_VERSION = 1
 WorkspaceKind = Literal["standard", "octopus"]
 MigrationFn = Callable[[dict[str, object]], dict[str, object]]
@@ -80,12 +79,16 @@ class MetadataManager:
         serialized = json.dumps(_serialize_workspaces_metadata(metadata), indent=2)
         _atomic_write_text(self.path, serialized)
 
-    def ensure_repo_tracked(self, *, cwd: Path, now: Callable[[], str] | None = None) -> None:
+    def ensure_repo_tracked(
+        self, *, cwd: Path, now: Callable[[], str] | None = None
+    ) -> None:
         tracked_git_dir = canonical_git_dir(cwd)
         tracked_repo_root = repo_root(cwd)
 
         if tracked_git_dir is None or tracked_repo_root is None:
-            raise ValueError("cannot track repository metadata outside a git repository")
+            raise ValueError(
+                "cannot track repository metadata outside a git repository"
+            )
 
         timestamp = (now or _utc_now_iso)()
         metadata = self.read()
@@ -96,7 +99,9 @@ class MetadataManager:
             git_dir=tracked_git_dir,
             repo_root=tracked_repo_root,
             default_remote=default_remote_name(cwd),
-            tracked_at=existing_repo.tracked_at if existing_repo is not None else timestamp,
+            tracked_at=(
+                existing_repo.tracked_at if existing_repo is not None else timestamp
+            ),
             updated_at=timestamp,
             workspaces=existing_repo.workspaces if existing_repo is not None else {},
         )
@@ -176,15 +181,17 @@ def _parse_workspaces_metadata(raw: object) -> WorkspacesMetadata:
             octopus_parents: list[str] = []
             for parent_raw in cast(list[object], octopus_parents_raw):
                 if not isinstance(parent_raw, str):
-                    raise ValueError("workspace octopus_parents must be a list of strings")
+                    raise ValueError(
+                        "workspace octopus_parents must be a list of strings"
+                    )
                 octopus_parents.append(parent_raw)
 
             kind_raw = workspace_obj.get("kind")
             if kind_raw not in {"standard", "octopus"}:
-                raise ValueError("workspace kind must be either 'standard' or 'octopus'")
-            kind: WorkspaceKind = (
-                "standard" if kind_raw == "standard" else "octopus"
-            )
+                raise ValueError(
+                    "workspace kind must be either 'standard' or 'octopus'"
+                )
+            kind: WorkspaceKind = "standard" if kind_raw == "standard" else "octopus"
 
             tracked_remote = workspace_obj.get("tracked_remote")
             if tracked_remote is not None and not isinstance(tracked_remote, str):

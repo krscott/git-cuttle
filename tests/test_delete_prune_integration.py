@@ -3,15 +3,16 @@ from pathlib import Path
 
 import pytest
 
+from git_cuttle.delete import current_branch, delete_block_reason, delete_workspace
 from git_cuttle.errors import AppError
-from git_cuttle.delete import current_branch, delete_block_reason
-from git_cuttle.delete import delete_workspace
 from git_cuttle.metadata_manager import MetadataManager
 from git_cuttle.new import create_standard_workspace
 from git_cuttle.prune import prune_candidate_for_branch, prune_reason, prune_workspaces
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -41,7 +42,9 @@ def test_delete_blocks_current_workspace_without_force(tmp_path: Path) -> None:
 
     assert active_branch == "feature/current"
     assert (
-        delete_block_reason(current=active_branch, target="feature/current", force=False)
+        delete_block_reason(
+            current=active_branch, target="feature/current", force=False
+        )
         == "current-workspace"
     )
     assert (
@@ -134,7 +137,9 @@ def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> Non
     assert '"dry_run": true' in rendered
     assert '"target": "feature/delete-dry-run"' in rendered
     assert destination.exists()
-    assert "feature/delete-dry-run" in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/delete-dry-run" in next(iter(manager.read().repos.values())).workspaces
+    )
 
 
 @pytest.mark.integration
@@ -193,7 +198,10 @@ def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> N
     )
     assert branch_result.returncode != 0
     assert not destination.exists()
-    assert "feature/delete-force" not in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/delete-force"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
 
 
 @pytest.mark.integration
@@ -268,7 +276,9 @@ def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(tmp_path: Path) -> None:
+def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(
+    tmp_path: Path,
+) -> None:
     remote = tmp_path / "remote.git"
     _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
 
@@ -351,7 +361,9 @@ def test_prune_skips_current_workspace_without_force(tmp_path: Path) -> None:
     )
     assert branch_result.returncode == 0
     assert destination.exists()
-    assert "feature/prune-current" in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/prune-current" in next(iter(manager.read().repos.values())).workspaces
+    )
 
 
 @pytest.mark.integration
@@ -384,7 +396,10 @@ def test_prune_force_removes_dirty_workspace_for_merged_pr(tmp_path: Path) -> No
     )
     assert branch_result.returncode != 0
     assert not destination.exists()
-    assert "feature/prune-force" not in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/prune-force"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
 
 
 @pytest.mark.integration
@@ -410,12 +425,20 @@ def test_prune_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
 
     branch_result = _git(
         cwd=repo,
-        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-no-upstream"],
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-no-upstream",
+        ],
         check=False,
     )
     assert branch_result.returncode == 0
     assert destination.exists()
-    assert "feature/prune-no-upstream" in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/prune-no-upstream"
+        in next(iter(manager.read().repos.values())).workspaces
+    )
 
     prune_workspaces(
         cwd=repo,
@@ -426,12 +449,20 @@ def test_prune_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
 
     branch_result = _git(
         cwd=repo,
-        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-no-upstream"],
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-no-upstream",
+        ],
         check=False,
     )
     assert branch_result.returncode != 0
     assert not destination.exists()
-    assert "feature/prune-no-upstream" not in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/prune-no-upstream"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
 
 
 @pytest.mark.integration
@@ -491,4 +522,7 @@ def test_prune_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
     )
     assert branch_result.returncode != 0
     assert not destination.exists()
-    assert "feature/prune-ahead" not in next(iter(manager.read().repos.values())).workspaces
+    assert (
+        "feature/prune-ahead"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )

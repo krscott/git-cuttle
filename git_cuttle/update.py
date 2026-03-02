@@ -1,6 +1,6 @@
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
 
 from git_cuttle.errors import AppError
 from git_cuttle.metadata_manager import WorkspaceMetadata
@@ -44,7 +44,9 @@ def update_non_octopus_workspace(
             guidance=("run octopus-specific update once implemented",),
         )
 
-    upstream_ref = _workspace_upstream_ref(workspace=workspace, default_remote=default_remote)
+    upstream_ref = _workspace_upstream_ref(
+        workspace=workspace, default_remote=default_remote
+    )
     if upstream_ref is None:
         raise AppError(
             code="no-upstream",
@@ -56,14 +58,21 @@ def update_non_octopus_workspace(
         )
 
     remote_name = upstream_ref.split("/", maxsplit=1)[0]
-    _git(repo_root=repo_root, args=["fetch", remote_name], code="update-fetch-failed", message="failed to fetch upstream")
+    _git(
+        repo_root=repo_root,
+        args=["fetch", remote_name],
+        code="update-fetch-failed",
+        message="failed to fetch upstream",
+    )
 
     if _rev_parse(repo_root=repo_root, ref=f"refs/remotes/{upstream_ref}") is None:
         raise AppError(
             code="no-upstream",
             message="workspace upstream remote branch does not exist",
             details=upstream_ref,
-            guidance=("push the branch to the remote or configure a different upstream",),
+            guidance=(
+                "push the branch to the remote or configure a different upstream",
+            ),
         )
 
     before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
@@ -170,7 +179,9 @@ def update_octopus_workspace(
     )
 
 
-def _workspace_upstream_ref(*, workspace: WorkspaceMetadata, default_remote: str | None) -> str | None:
+def _workspace_upstream_ref(
+    *, workspace: WorkspaceMetadata, default_remote: str | None
+) -> str | None:
     remote_name = workspace.tracked_remote or default_remote
     if remote_name is None:
         return None
@@ -189,7 +200,9 @@ def _branch_head(*, repo_root: Path, branch: str) -> str:
     return branch_oid
 
 
-def _resolve_octopus_parent_ref(*, repo_root: Path, remote_name: str | None, parent_ref: str) -> str:
+def _resolve_octopus_parent_ref(
+    *, repo_root: Path, remote_name: str | None, parent_ref: str
+) -> str:
     if remote_name is not None:
         remote_tracking_ref = f"refs/remotes/{remote_name}/{parent_ref}"
         if _rev_parse(repo_root=repo_root, ref=remote_tracking_ref) is not None:
@@ -207,7 +220,9 @@ def _resolve_octopus_parent_ref(*, repo_root: Path, remote_name: str | None, par
     )
 
 
-def _octopus_replay_commits(*, repo_root: Path, branch: str, parent_refs: tuple[str, ...]) -> list[str]:
+def _octopus_replay_commits(
+    *, repo_root: Path, branch: str, parent_refs: tuple[str, ...]
+) -> list[str]:
     result = subprocess.run(
         ["git", "rev-list", "--reverse", branch, "--not", *parent_refs],
         capture_output=True,
@@ -233,7 +248,9 @@ def _octopus_replay_commits(*, repo_root: Path, branch: str, parent_refs: tuple[
 
 
 def _is_merge_commit(*, repo_root: Path, commit: str) -> bool:
-    parent_line = _git_stdout(repo_root=repo_root, args=["show", "-s", "--format=%P", commit])
+    parent_line = _git_stdout(
+        repo_root=repo_root, args=["show", "-s", "--format=%P", commit]
+    )
     parent_oids = [parent for parent in parent_line.split() if parent]
     return len(parent_oids) > 1
 

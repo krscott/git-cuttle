@@ -1,12 +1,21 @@
+import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-import subprocess
 from typing import Literal
 
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, repo_root
-from git_cuttle.metadata_manager import MetadataManager, WorkspaceMetadata, WorkspacesMetadata
-from git_cuttle.plan_output import DryRunPlan, PlanAction, render_human_plan, render_json_plan
+from git_cuttle.metadata_manager import (
+    MetadataManager,
+    WorkspaceMetadata,
+    WorkspacesMetadata,
+)
+from git_cuttle.plan_output import (
+    DryRunPlan,
+    PlanAction,
+    render_human_plan,
+    render_json_plan,
+)
 
 PrStatus = Literal["merged", "open", "closed", "unknown", "unavailable"]
 PruneReason = Literal["missing-local-branch", "merged-pr"]
@@ -112,7 +121,9 @@ def prune_workspaces(
     if dry_run:
         return render_json_plan(plan) if json_output else render_human_plan(plan)
 
-    pruned_branches = {decision.branch for decision in decisions if decision.block_reason is None}
+    pruned_branches = {
+        decision.branch for decision in decisions if decision.block_reason is None
+    }
     for decision in decisions:
         if decision.block_reason is not None:
             continue
@@ -135,12 +146,16 @@ def prune_workspaces(
         return None
 
     updated_workspaces = {
-        name: workspace for name, workspace in repo.workspaces.items() if name not in pruned_branches
+        name: workspace
+        for name, workspace in repo.workspaces.items()
+        if name not in pruned_branches
     }
     updated_repo = replace(repo, workspaces=updated_workspaces)
     updated_repos = dict(metadata.repos)
     updated_repos[repo_key] = updated_repo
-    metadata_manager.write(WorkspacesMetadata(version=metadata.version, repos=updated_repos))
+    metadata_manager.write(
+        WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+    )
     return None
 
 
@@ -236,7 +251,9 @@ def prune_block_reason(
     if not _ref_exists(repo_root=repo_root, ref=f"refs/remotes/{upstream_ref}"):
         return "no-upstream"
 
-    ahead = _ahead_count(repo_root=repo_root, local_branch=target, upstream_ref=upstream_ref)
+    ahead = _ahead_count(
+        repo_root=repo_root, local_branch=target, upstream_ref=upstream_ref
+    )
     if ahead is None:
         return "no-upstream"
     if ahead > 0:
@@ -245,7 +262,9 @@ def prune_block_reason(
     return None
 
 
-def _workspace_upstream_ref(*, tracked_remote: str | None, default_remote: str | None, branch: str) -> str | None:
+def _workspace_upstream_ref(
+    *, tracked_remote: str | None, default_remote: str | None, branch: str
+) -> str | None:
     remote_name = tracked_remote or default_remote
     if remote_name is None:
         return None
@@ -263,9 +282,17 @@ def _ref_exists(*, repo_root: Path, ref: str) -> bool:
     return result.returncode == 0
 
 
-def _ahead_count(*, repo_root: Path, local_branch: str, upstream_ref: str) -> int | None:
+def _ahead_count(
+    *, repo_root: Path, local_branch: str, upstream_ref: str
+) -> int | None:
     result = subprocess.run(
-        ["git", "rev-list", "--left-right", "--count", f"{local_branch}...{upstream_ref}"],
+        [
+            "git",
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"{local_branch}...{upstream_ref}",
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -284,7 +311,9 @@ def _ahead_count(*, repo_root: Path, local_branch: str, upstream_ref: str) -> in
         return None
 
 
-def _build_prune_plan(*, decisions: tuple[PruneDecision, ...], force: bool) -> DryRunPlan:
+def _build_prune_plan(
+    *, decisions: tuple[PruneDecision, ...], force: bool
+) -> DryRunPlan:
     actions: list[PlanAction] = []
     warnings: list[str] = []
     for decision in decisions:
@@ -309,7 +338,11 @@ def _build_prune_plan(*, decisions: tuple[PruneDecision, ...], force: bool) -> D
                     details="forced" if force else decision.reason,
                 )
             )
-        actions.append(PlanAction(op="untrack-workspace", target=decision.branch, details=decision.reason))
+        actions.append(
+            PlanAction(
+                op="untrack-workspace", target=decision.branch, details=decision.reason
+            )
+        )
 
     return DryRunPlan(command="prune", actions=tuple(actions), warnings=tuple(warnings))
 

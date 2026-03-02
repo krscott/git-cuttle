@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from git_cuttle.list_output import TABLE_HEADERS, UNKNOWN_MARKER, render_workspace_table, rows_for_repo
+from git_cuttle.list_output import (
+    TABLE_HEADERS,
+    UNKNOWN_MARKER,
+    render_workspace_table,
+    rows_for_repo,
+)
 from git_cuttle.metadata_manager import RepoMetadata, WorkspaceKind, WorkspaceMetadata
 from git_cuttle.remote_status import PullRequestStatus, RemoteAheadBehindStatus
 

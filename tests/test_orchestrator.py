@@ -1,6 +1,9 @@
 import pathlib
 import subprocess
 
+import pytest
+
+import git_cuttle.orchestrator as orchestrator_module
 from git_cuttle.lib import Options
 from git_cuttle.metadata_manager import MetadataManager
 from git_cuttle.orchestrator import command_requires_auto_tracking, run
@@ -27,6 +30,19 @@ class StubTracker:
         self.calls.append(cwd)
 
 
+def _noop_dispatch(
+    *,
+    command_name: str,
+    opts: Options,
+    cwd: pathlib.Path,
+    metadata_manager: object,
+) -> None:
+    _ = command_name
+    _ = opts
+    _ = cwd
+    _ = metadata_manager
+
+
 def test_command_requires_auto_tracking_for_mutating_commands() -> None:
     assert command_requires_auto_tracking("new")
     assert command_requires_auto_tracking("delete")
@@ -40,13 +56,23 @@ def test_command_requires_auto_tracking_ignores_non_mutating_commands() -> None:
     assert not command_requires_auto_tracking("unknown")
 
 
-def test_run_tracks_repo_for_mutating_command(tmp_path: pathlib.Path) -> None:
+def test_run_tracks_repo_for_mutating_command(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
     tracker = StubTracker()
 
-    run(Options(branch="feature/demo"), cwd=repo, metadata_manager=tracker, command_name="delete")
+    monkeypatch.setattr(orchestrator_module, "_dispatch_command", _noop_dispatch)
+
+    run(
+        Options(branch="feature/demo"),
+        cwd=repo,
+        metadata_manager=tracker,
+        command_name="delete",
+    )
 
     assert tracker.calls == [repo]
 

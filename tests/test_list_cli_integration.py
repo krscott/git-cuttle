@@ -1,11 +1,13 @@
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 
 
-def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         check=check,
@@ -63,14 +65,17 @@ def test_list_renders_online_github_pr_status(tmp_path: Path) -> None:
     env = _base_env(tmp_path)
     workspace_path = _new_workspace(repo=repo, env=env, branch="feature/list-online")
     _git(cwd=workspace_path, args=["push", "-u", "origin", "feature/list-online"])
-    _git(cwd=repo, args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"])
+    _git(
+        cwd=repo,
+        args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"],
+    )
 
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     _write_fake_gh(
         directory=fake_bin,
         script_body="#!/bin/sh\n"
-        "printf '[{\"state\":\"OPEN\",\"isDraft\":false,\"title\":\"Add list coverage\",\"url\":\"https://github.com/acme/repo/pull/1\"}]'\n",
+        'printf \'[{"state":"OPEN","isDraft":false,"title":"Add list coverage","url":"https://github.com/acme/repo/pull/1"}]\'\n',
     )
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
 
@@ -106,7 +111,10 @@ def test_list_shows_unknown_marker_when_gh_is_offline(tmp_path: Path) -> None:
     env = _base_env(tmp_path)
     workspace_path = _new_workspace(repo=repo, env=env, branch="feature/list-offline")
     _git(cwd=workspace_path, args=["push", "-u", "origin", "feature/list-offline"])
-    _git(cwd=repo, args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"])
+    _git(
+        cwd=repo,
+        args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"],
+    )
 
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
@@ -141,15 +149,16 @@ def test_list_shows_unknown_marker_when_gh_is_unauthenticated(tmp_path: Path) ->
     env = _base_env(tmp_path)
     workspace_path = _new_workspace(repo=repo, env=env, branch="feature/list-unauth")
     _git(cwd=workspace_path, args=["push", "-u", "origin", "feature/list-unauth"])
-    _git(cwd=repo, args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"])
+    _git(
+        cwd=repo,
+        args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"],
+    )
 
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     _write_fake_gh(
         directory=fake_bin,
-        script_body="#!/bin/sh\n"
-        "printf 'authentication failed' >&2\n"
-        "exit 1\n",
+        script_body="#!/bin/sh\n" "printf 'authentication failed' >&2\n" "exit 1\n",
     )
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
 
