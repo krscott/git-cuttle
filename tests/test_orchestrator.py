@@ -2,6 +2,7 @@ import pathlib
 import subprocess
 
 from git_cuttle.lib import Options
+from git_cuttle.metadata_manager import MetadataManager
 from git_cuttle.orchestrator import command_requires_auto_tracking, run
 
 
@@ -59,3 +60,18 @@ def test_run_skips_tracking_for_non_mutating_command(tmp_path: pathlib.Path) -> 
     run(Options(name="Test"), cwd=repo, metadata_manager=tracker, command_name="list")
 
     assert tracker.calls == []
+
+
+def test_non_mutating_command_never_creates_tracking_entries(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+
+    run(Options(name="Test"), cwd=repo, metadata_manager=manager, command_name="list")
+    run(Options(name="Test"), cwd=repo, metadata_manager=manager, command_name="list")
+
+    assert not metadata_path.exists()
