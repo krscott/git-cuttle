@@ -45,7 +45,7 @@
 - [ ] Implement PR status/title integration against each workspace's tracked remote.
 - [ ] Implement short-TTL status cache (default 60s) used by `list`.
 - [ ] Ensure cache refresh never creates tracking entries.
-- [ ] Ensure prune treats unknown/unavailable PR status as not merged.
+- [x] Ensure prune treats unknown/unavailable PR status as not merged.
 
 ## Output and UX Contracts
 
