@@ -18,7 +18,7 @@ implementation work and user-visible automated test coverage.
   so `delete --dry-run` and `delete --dry-run --json` reflect the same upstream
   safety contract as mutating delete.
 
-- [ ] [P1] Story: Refresh integration contract documentation to match shipped coverage.
+- [x] [P1] Story: Refresh integration contract documentation to match shipped coverage.
   `INTEGRATION_TEST_MATRIX.md` still marks major command and safety requirements
   as `planned` despite implemented tests. Reconcile matrix status entries with
   current test suite and add a lightweight check that prevents future drift.

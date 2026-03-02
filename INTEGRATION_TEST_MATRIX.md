@@ -30,25 +30,25 @@ Status values:
 
 ## Workspace command contracts
 
-| Command flow | Requirement | DESIGN.md section | Status | Planned coverage |
+| Command flow | Requirement | DESIGN.md section | Status | Test reference |
 |---|---|---|---|---|
-| `new` standard | Base resolution, branch create, sanitized destination path, branch conflict errors | Use Cases -> Creating a new branch and worktree | planned | Add integration cases for base provided/missing, existing local/remote branch, deterministic path mapping |
-| `new` octopus | N-way merge creation and ordered parent persistence | Use Cases -> Creating an octopus branch | planned | Add integration cases asserting parent order and persisted metadata |
-| `list` | Table columns and graceful unknown markers for remote/PR failures | Use Cases -> List workspaces | planned | Add integration cases for offline/unauthenticated states with non-fatal output |
-| `delete` | Safety gates (`dirty`, ahead, no-upstream), current-workspace block, force and dry-run/json plans | Use Cases -> Delete workspace | planned | Add integration cases for each block and force override |
-| `prune` | Merged-PR or missing-local-branch criteria, unknown PR treated as not merged, force and dry-run/json plans | Use Cases -> Prune | planned | Add integration cases for each prune reason and unknown PR behavior |
-| `update` non-octopus | Upstream rebase path and no-upstream error | Use Cases -> Updating a branch | planned | Add integration cases for upstream present/absent |
-| `update` octopus | Parent updates, new n-way merge, replay post-merge commits | Use Cases -> Updating a branch | planned | Add integration cases validating merge parent order and replayed commits |
-| `absorb` | Explicit target branch, interactive mode, heuristic ambiguity failure path | Use Cases -> Absorbing a change (octopus branch) | planned | Add integration cases for explicit, interactive, and ambiguous heuristic flows |
+| `new` standard | Base resolution, branch create, sanitized destination path, branch conflict errors | Use Cases -> Creating a new branch and worktree | covered | `tests/test_new_cli_integration.py::test_cli_new_standard_from_repo_root_creates_workspace_and_metadata`; `tests/test_new_cli_integration.py::test_cli_new_invalid_base_ref_shows_actionable_hint` |
+| `new` octopus | N-way merge creation and ordered parent persistence | Use Cases -> Creating an octopus branch | covered | `tests/test_new_cli_integration.py::test_cli_new_octopus_from_worktree_context_creates_workspace` |
+| `list` | Table columns and graceful unknown markers for remote/PR failures | Use Cases -> List workspaces | covered | `tests/test_list_cli_integration.py::test_list_renders_online_github_pr_status`; `tests/test_list_cli_integration.py::test_list_shows_unknown_marker_when_gh_is_offline` |
+| `delete` | Safety gates (`dirty`, ahead, no-upstream), current-workspace block, force and dry-run/json plans | Use Cases -> Delete workspace | covered | `tests/test_delete_prune_integration.py::test_delete_blocks_dirty_workspace_without_force`; `tests/test_delete_prune_integration.py::test_delete_dry_run_matches_mutating_block_without_upstream`; `tests/test_delete_prune_integration.py::test_delete_dry_run_json_outputs_plan_without_changes` |
+| `prune` | Merged-PR or missing-local-branch criteria, unknown PR treated as not merged, force and dry-run/json plans | Use Cases -> Prune | covered | `tests/test_delete_prune_integration.py::test_prune_missing_local_branch_removes_worktree_directory_and_metadata`; `tests/test_delete_prune_integration.py::test_prune_does_not_remove_branch_for_unknown_pr_state`; `tests/test_delete_prune_integration.py::test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning` |
+| `update` non-octopus | Upstream rebase path and no-upstream error | Use Cases -> Updating a branch | covered | `tests/test_update_integration.py::test_update_non_octopus_rebases_local_commit_onto_upstream`; `tests/test_update_integration.py::test_update_non_octopus_fails_when_no_upstream_is_configured` |
+| `update` octopus | Parent updates, new n-way merge, replay post-merge commits | Use Cases -> Updating a branch | covered | `tests/test_update_integration.py::test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_commits`; `tests/test_update_integration.py::test_update_octopus_rolls_back_branch_on_merge_failure` |
+| `absorb` | Explicit target branch, interactive mode, heuristic ambiguity failure path | Use Cases -> Absorbing a change (octopus branch) | covered | `tests/test_absorb_cli_integration.py::test_cli_absorb_explicit_target_moves_commits_to_parent`; `tests/test_absorb_cli_integration.py::test_cli_absorb_interactive_mode_uses_selected_parent`; `tests/test_absorb_cli_integration.py::test_cli_absorb_heuristic_mode_reports_ambiguity` |
 
 ## Safety, transactions, and rollback
 
-| Requirement | DESIGN.md section | Status | Planned coverage |
+| Requirement | DESIGN.md section | Status | Test reference |
 |---|---|---|---|
-| Clean-operation policy: no conflict-accepting merge/rebase/cherry-pick flows | Merge strategy | planned | Build conflict fixtures and assert blocking guidance |
-| Atomic multi-branch/worktree operations | Merge strategy | planned | Inject failures mid-operation and assert full rollback |
-| Backup refs under `refs/gitcuttle/txn/<txn-id>/...` for touched branches | Merge strategy (minimum rollback mechanism) | planned | Assert temporary refs exist during txn and are cleaned on success |
-| Rollback failure reports exact partial state and deterministic recovery commands | Merge strategy | planned | Force rollback failure and assert required recovery output |
+| Clean-operation policy: no conflict-accepting merge/rebase/cherry-pick flows | Merge strategy | covered | `tests/test_update_cli_integration.py::test_cli_update_reports_rebase_conflict_recovery_guidance`; `tests/test_absorb_integration.py::test_absorb_reports_explicit_target_rebase_conflict_recovery_guidance` |
+| Atomic multi-branch/worktree operations | Merge strategy | covered | `tests/test_safety_critical_integration.py::test_transaction_rolls_back_mutations_on_failure` |
+| Backup refs under `refs/gitcuttle/txn/<txn-id>/...` for touched branches | Merge strategy (minimum rollback mechanism) | covered | `tests/test_safety_critical_integration.py::test_transaction_rolls_back_mutations_on_failure` |
+| Rollback failure reports exact partial state and deterministic recovery commands | Merge strategy | covered | `tests/test_safety_critical_integration.py::test_transaction_rollback_failure_reports_partial_state` |
 
 ## Metadata and tracking contracts
 
@@ -59,12 +59,12 @@ Status values:
 | Atomic metadata writes | Merge strategy (minimum rollback mechanism) | covered | `tests/test_metadata_manager.py` |
 | Schema migration creates backup before write | Persistent Data | covered | `tests/test_metadata_manager.py` |
 | Workspace path derivation and deterministic collision handling | Persistent Data -> Workspace path derivation | covered | `tests/test_workspace_paths.py` |
-| Mutating commands auto-track repo; read-only commands do not create tracking entries | Command Scope and Tracking | planned | Add integration cases for `new/delete/prune/update/absorb` vs `list` |
+| Mutating commands auto-track repo; read-only commands do not create tracking entries | Command Scope and Tracking | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_list_does_not_create_tracking_metadata`; `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_commands_from_worktree_use_single_repo_identity` |
 
 ## Remote and cache contracts
 
 | Requirement | DESIGN.md section | Status | Planned coverage |
 |---|---|---|---|
 | `list` uses short TTL status cache (default 60s) | Persistent Data -> Status cache | planned | Add integration cases with clock control/fake backend |
-| Cache refresh does not create tracking entries | Persistent Data -> Status cache | planned | Add integration case invoking `list` in untracked repo |
-| Prune treats unknown PR status as not merged | Use Cases -> Prune | planned | Add integration case with unavailable PR provider |
+| Cache refresh does not create tracking entries | Persistent Data -> Status cache | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_list_cache_refresh_never_creates_tracking_metadata` |
+| Prune treats unknown PR status as not merged | Use Cases -> Prune | covered | `tests/test_delete_prune_integration.py::test_prune_does_not_remove_branch_for_unknown_pr_state` |
