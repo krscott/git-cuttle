@@ -351,4 +351,7 @@ def test_cli_delete_rejects_untracked_workspace_with_manual_git_guidance(
     assert "error[workspace-not-tracked]: workspace is not tracked" in result.stderr
     assert "details: feature/not-tracked" in result.stderr
     assert "hint: run `git branch --list` to inspect local branches" in result.stderr
-    assert "hint: if needed, delete manually with `git branch -D <branch>`" in result.stderr
+    assert (
+        "hint: if needed, delete manually with `git branch -D <branch>`"
+        in result.stderr
+    )

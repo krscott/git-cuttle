@@ -197,7 +197,9 @@ def test_cli_mutating_command_rejects_workspace_branch_key_mismatch(
                         "workspaces": {
                             "feature/wrong": {
                                 "branch": "feature/right",
-                                "worktree_path": str(tmp_path / "worktrees" / "feature-right"),
+                                "worktree_path": str(
+                                    tmp_path / "worktrees" / "feature-right"
+                                ),
                                 "tracked_remote": None,
                                 "kind": "standard",
                                 "base_ref": "main",

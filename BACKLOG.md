@@ -41,3 +41,11 @@ Nice-to-have improvements discovered during PR review.
 - [ ] Add a lightweight CI guard that fails when PR checks are red but
   `TODO.md` has no open P1 remediation story, to keep review follow-up tracking
   aligned with merge blockers.
+
+- [ ] Add a DESIGN contract snapshot test that fails when new/edited `MUST`
+  requirements are introduced without corresponding `INTEGRATION_TEST_MATRIX.md`
+  rows, so review drift is caught at commit time.
+
+- [ ] Add an end-to-end smoke command (`python -m pytest -m integration -k
+  "destination or parity or rollback"`) to speed up local validation of the
+  highest-risk DESIGN contracts before pushing.

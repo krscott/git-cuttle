@@ -249,16 +249,24 @@ def test_cli_new_rejects_branch_when_name_exists_on_default_remote(
     tmp_path: pathlib.Path,
 ) -> None:
     bare_remote = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "--bare", str(bare_remote)], check=True, cwd=tmp_path)
+    subprocess.run(
+        ["git", "init", "--bare", str(bare_remote)], check=True, cwd=tmp_path
+    )
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
-    subprocess.run(["git", "remote", "add", "origin", str(bare_remote)], check=True, cwd=repo)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(bare_remote)], check=True, cwd=repo
+    )
     subprocess.run(["git", "push", "-u", "origin", "main"], check=True, cwd=repo)
 
     upstream_writer = tmp_path / "upstream-writer"
-    subprocess.run(["git", "clone", str(bare_remote), str(upstream_writer)], check=True, cwd=tmp_path)
+    subprocess.run(
+        ["git", "clone", str(bare_remote), str(upstream_writer)],
+        check=True,
+        cwd=tmp_path,
+    )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         check=True,

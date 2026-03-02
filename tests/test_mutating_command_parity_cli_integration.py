@@ -81,7 +81,9 @@ def _write_repo_metadata(
     )
 
 
-def _delete_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.CompletedProcess[str]:
+def _delete_case(
+    *, tmp_path: Path, from_worktree: bool
+) -> subprocess.CompletedProcess[str]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
     _init_repo(repo)
@@ -118,14 +120,18 @@ def _delete_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.Completed
     )
     assert branch_check.returncode != 0
 
-    metadata = MetadataManager(path=xdg_data_home / "gitcuttle" / "workspaces.json").read()
+    metadata = MetadataManager(
+        path=xdg_data_home / "gitcuttle" / "workspaces.json"
+    ).read()
     tracked_repo = next(iter(metadata.repos.values()))
     assert "feature/delete-target" not in tracked_repo.workspaces
     assert "feature/context" in tracked_repo.workspaces
     return result
 
 
-def _prune_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.CompletedProcess[str]:
+def _prune_case(
+    *, tmp_path: Path, from_worktree: bool
+) -> subprocess.CompletedProcess[str]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
     _init_repo(repo)
@@ -165,7 +171,9 @@ def _prune_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.CompletedP
     )
     assert branch_check.returncode != 0
 
-    metadata = MetadataManager(path=xdg_data_home / "gitcuttle" / "workspaces.json").read()
+    metadata = MetadataManager(
+        path=xdg_data_home / "gitcuttle" / "workspaces.json"
+    ).read()
     tracked_repo = next(iter(metadata.repos.values()))
     assert "feature/prune-target" not in tracked_repo.workspaces
     assert "feature/context" in tracked_repo.workspaces
@@ -188,7 +196,9 @@ def _clone_local_remote(*, tmp_path: Path) -> tuple[Path, Path]:
     return bare_remote, local
 
 
-def _update_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.CompletedProcess[str]:
+def _update_case(
+    *, tmp_path: Path, from_worktree: bool
+) -> subprocess.CompletedProcess[str]:
     bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
 
     _git(cwd=local, args=["checkout", "-b", "feature/update-parity"])
@@ -276,7 +286,9 @@ def _setup_octopus_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _absorb_case(*, tmp_path: Path, from_worktree: bool) -> subprocess.CompletedProcess[str]:
+def _absorb_case(
+    *, tmp_path: Path, from_worktree: bool
+) -> subprocess.CompletedProcess[str]:
     repo = _setup_octopus_repo(tmp_path)
     (repo / "release-only.txt").write_text("r1\n")
     _git(cwd=repo, args=["add", "release-only.txt"])
