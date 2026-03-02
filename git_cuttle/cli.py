@@ -108,7 +108,10 @@ def _show_status() -> int:
         print(f"workspace: {workspace.name}")
         print(f"parents: {branches}")
         print(f"post-merge commits: {post_merge_count}")
-        if tracked_worktree is not None:
+        if tracked_worktree is not None and _is_workspace_tracked_worktree_pair(
+            workspace=workspace,
+            tracked_worktree=tracked_worktree,
+        ):
             print(f"worktree path: {tracked_worktree.path}")
         return 0
 

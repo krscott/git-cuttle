@@ -1095,6 +1095,18 @@ def test_cli_delete_requires_disambiguation_for_unlinked_collision() -> None:
         )
         assert f"ws [branch]: path={worktree_path}" in list_result.stdout
 
+        status_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "status"],
+            cwd=worktree_path,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert status_result.returncode == 0
+        assert "workspace: ws" in status_result.stdout
+        assert "worktree path:" not in status_result.stdout
+
         ambiguous_delete = subprocess.run(
             [sys.executable, "-m", "git_cuttle", "delete", "ws"],
             cwd=repo,
