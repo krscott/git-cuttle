@@ -15,15 +15,16 @@ It is intentionally scoped to what exists in code today.
 - transactional operation primitive for multi-step branch/worktree mutations
 - workspace creation helpers for standard and octopus branches
 - non-octopus and octopus workspace update helpers
+- octopus absorb helper with explicit, interactive, and heuristic targeting
 - remote ahead/behind status resolution helpers for tracked workspaces
 - list table rendering helpers with unknown-status markers
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
 `absorb`) are planned but not yet implemented end-to-end in the CLI.
 
-The `new` and `update` portions are partially implemented as
-library helpers in `git_cuttle/new.py` and `git_cuttle/update.py`, but are not
-yet wired to CLI subcommands.
+The `new`, `update`, and `absorb` portions are partially implemented as
+library helpers in `git_cuttle/new.py`, `git_cuttle/update.py`, and
+`git_cuttle/absorb.py`, but are not yet wired to CLI subcommands.
 
 ## Runtime Flow
 
@@ -165,6 +166,24 @@ derived workspace path rules.
   - replays post-merge commits unique to the octopus branch via cherry-pick
   - intentionally avoids direct upstream rebasing of the octopus branch itself
 - both update helpers return before/after branch OIDs for future plan wiring
+
+## Workspace Absorb Helper
+
+`git_cuttle/absorb.py` provides library-level absorb behavior for octopus
+workspaces:
+
+- requires `kind="octopus"` and at least two tracked parent refs
+- identifies post-merge commits unique to the octopus branch
+- supports explicit target mode by forcing all absorb commits to one selected
+  parent branch
+- supports interactive mode through a callback-based parent selector
+- supports heuristic mode that infers a target parent from changed-file overlap
+  and fails closed (`error[absorb-target-uncertain]`) when confidence is low or
+  ambiguous
+- cherry-picks absorbed commits onto selected parent branches in chronological
+  order
+- resets the octopus branch back to its merge commit after absorb to remove the
+  absorbed post-merge commits from the octopus branch history
 
 ## Remote Status Helpers
 

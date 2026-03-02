@@ -37,7 +37,7 @@
 - [x] Implement `gitcuttle prune` with merged-PR or missing-local-branch criteria, safety gates, `--force`, `--dry-run`, and `--json` plan output.
 - [x] Implement `gitcuttle update` for non-octopus branches (upstream rebase rules + no-upstream error path).
 - [x] Implement octopus `gitcuttle update` rebuild flow (parent updates, new n-way merge, replay post-merge commits, no direct octopus upstream rebase).
-- [ ] Implement `gitcuttle absorb` (explicit target branch mode, interactive `-i`, heuristic mode with confidence failure behavior).
+- [x] Implement `gitcuttle absorb` (explicit target branch mode, interactive `-i`, heuristic mode with confidence failure behavior).
 
 ## Remote/PR Integration and Caching
 
