@@ -4,12 +4,18 @@ import argparse
 import logging
 import sys
 
-from git_cuttle.git_ops import GitCuttleError, get_current_branch, run_git
+from git_cuttle.git_ops import (
+    GitCuttleError,
+    branch_exists_local,
+    get_current_branch,
+    run_git,
+)
 from git_cuttle.rebase import rebase_workspace_commits, update_workspace
 from git_cuttle.workspace import (
     count_post_merge_commits,
     create_workspace,
     delete_workspace,
+    generate_workspace_name,
     get_workspace,
     list_workspaces,
 )
@@ -19,6 +25,7 @@ from git_cuttle.worktree_tracking import (
     ensure_workspace_worktree,
     get_tracked_worktree,
     list_tracked_worktrees,
+    precheck_worktree_target,
     remove_tracked_worktree_path,
 )
 
@@ -142,6 +149,34 @@ def _show_list() -> int:
     return 0
 
 
+def _rollback_workspace_creation(
+    workspace_name: str, original_branch: str
+) -> str | None:
+    errors: list[str] = []
+
+    if get_current_branch() == workspace_name and branch_exists_local(original_branch):
+        try:
+            run_git(["checkout", original_branch])
+        except GitCuttleError as exc:
+            errors.append(f"failed to restore original branch: {exc}")
+
+    try:
+        delete_workspace(workspace_name)
+    except OSError as exc:
+        errors.append(f"failed to remove workspace metadata: {exc}")
+
+    if branch_exists_local(workspace_name):
+        try:
+            run_git(["branch", "-D", workspace_name])
+        except GitCuttleError as exc:
+            errors.append(f"failed to delete workspace branch: {exc}")
+
+    if not errors:
+        return None
+
+    return "; ".join(errors)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -171,12 +206,28 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
 
-            original_branch = get_current_branch()
-            created_workspace = create_workspace(args.branches, args.name)
-            if get_current_branch() == created_workspace.merge_branch:
-                run_git(["checkout", original_branch])
+            workspace_name = args.name or generate_workspace_name(args.branches)
+            precheck_worktree_target(workspace_name)
 
-            result = ensure_workspace_worktree(created_workspace)
+            original_branch = get_current_branch()
+            created_workspace = create_workspace(args.branches, workspace_name)
+            try:
+                if get_current_branch() == created_workspace.merge_branch:
+                    run_git(["checkout", original_branch])
+                result = ensure_workspace_worktree(created_workspace)
+            except Exception as exc:
+                rollback_error = _rollback_workspace_creation(
+                    created_workspace.name, original_branch
+                )
+                if rollback_error is None:
+                    raise GitCuttleError(
+                        f"{exc}\nrolled back created workspace: {created_workspace.name}"
+                    ) from exc
+                raise GitCuttleError(
+                    f"{exc}\nrollback incomplete for workspace "
+                    f"{created_workspace.name}: {rollback_error}"
+                ) from exc
+
             _show_worktree_result(
                 path=result.tracked.path,
                 print_path=args.print_path,

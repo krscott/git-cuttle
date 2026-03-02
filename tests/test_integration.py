@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -511,3 +512,153 @@ def test_cli_worktree_multi_branch_tracks_and_deletes() -> None:
         )
         assert list_after_delete.returncode == 0
         assert "no tracked workspaces or worktrees" in list_after_delete.stdout
+
+
+@pytest.mark.integration
+def test_cli_worktree_multi_branch_precheck_prevents_partial_workspace() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        repo_fingerprint = hashlib.sha256(
+            str(repo.resolve()).encode("utf-8")
+        ).hexdigest()[:12]
+        blocked_path = (
+            xdg_data_home
+            / "gitcuttle"
+            / "worktrees"
+            / repo.name
+            / repo_fingerprint
+            / "ws"
+        )
+        blocked_path.mkdir(parents=True, exist_ok=True)
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-a",
+                "feature-b",
+                "--name",
+                "ws",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert f"target worktree path already exists: {blocked_path}" in result.stderr
+
+        assert not (repo / ".git" / "gitcuttle" / "workspaces" / "ws.json").exists()
+        assert not (repo / ".git" / "refs" / "gitcuttle" / "ws").exists()
+        branch_result = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/ws"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert branch_result.returncode == 1
+
+
+@pytest.mark.integration
+def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        readonly_xdg_data_home = root / "xdg-readonly"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        readonly_xdg_data_home.mkdir(parents=True, exist_ok=True)
+        readonly_xdg_data_home.chmod(0o500)
+        try:
+            run_env = {**env, "XDG_DATA_HOME": str(readonly_xdg_data_home)}
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "git_cuttle",
+                    "worktree",
+                    "feature-a",
+                    "feature-b",
+                    "--name",
+                    "ws",
+                    "--print-path",
+                ],
+                cwd=repo,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=run_env,
+            )
+        finally:
+            readonly_xdg_data_home.chmod(0o700)
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "rolled back created workspace: ws" in result.stderr
+
+        assert not (repo / ".git" / "gitcuttle" / "workspaces" / "ws.json").exists()
+        assert not (repo / ".git" / "refs" / "gitcuttle" / "ws").exists()
+        branch_result = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/ws"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert branch_result.returncode == 1

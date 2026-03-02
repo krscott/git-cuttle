@@ -173,24 +173,36 @@ def _build_tracked_worktree(
     )
 
 
-def _ensure_worktree(
-    branch: str,
-    kind: TrackedWorktreeKind,
-    workspace_name: str | None,
-) -> EnsureWorktreeResult:
+def _check_target_path(branch: str) -> tuple[Path, bool]:
     target_path = managed_worktree_path(branch)
 
     if target_path.exists():
         if _is_path_branch_worktree(target_path, branch):
-            tracked = _build_tracked_worktree(branch, kind, workspace_name)
-            save_tracked_worktree(tracked)
-            return EnsureWorktreeResult(tracked=tracked, reused=True)
+            return target_path, True
         raise GitCuttleError(f"target worktree path already exists: {target_path}")
 
     if _path_is_registered_worktree(target_path):
         raise GitCuttleError(
             f"target path is already registered as a different worktree: {target_path}"
         )
+
+    return target_path, False
+
+
+def precheck_worktree_target(branch: str) -> None:
+    _check_target_path(branch)
+
+
+def _ensure_worktree(
+    branch: str,
+    kind: TrackedWorktreeKind,
+    workspace_name: str | None,
+) -> EnsureWorktreeResult:
+    target_path, reused = _check_target_path(branch)
+    if reused:
+        tracked = _build_tracked_worktree(branch, kind, workspace_name)
+        save_tracked_worktree(tracked)
+        return EnsureWorktreeResult(tracked=tracked, reused=True)
 
     remote_ref: str | None = None
     if branch_exists_local(branch):
