@@ -1,33 +1,133 @@
 # git-cuttle
 
-My rather opinionated Python project template.
+`git-cuttle` is a CLI for managing multi-branch git workspace workflows with
+safe, predictable operations.
 
-To start a project with this template, run:
-```
-./init-template.sh new_project_name
-```
+## Command overview
 
-## Documentation Structure
+`git-cuttle` is designed around a small set of flows:
 
-This repository contains several documentation files for different audiences:
+- `new`: create a tracked branch + workspace
+- `list`: inspect tracked workspaces and status
+- `update`: pull in upstream changes
+- `absorb`: move octopus post-merge commits back to parent branches
+- `delete`: remove a tracked workspace
+- `prune`: clean up workspaces that are merged or otherwise removable
 
-- **README.md** - User-facing project documentation for developers using or deploying this project
-- [**DESIGN.md**](DESIGN.md) - Normative behavior and command contracts for the CLI
-- [**TROUBLESHOOTING.md**](TROUBLESHOOTING.md) - Operational recovery for rollback and git-state issues
-- [**AGENTS.md**](AGENTS.md) - Comprehensive development guidelines for AI agents,
-  including code style, conventions, and workflows
-  (Note: CLAUDE.md is symlinked to AGENTS.md in nix dev shell)
+For normative behavior details and edge-case contracts, see
+[`DESIGN.md`](DESIGN.md).
 
-## Development
+## Quick examples
 
-Update dependencies
-```
-nix flake update
-```
+Create a workspace from your current commit:
 
-Start nix dev shell
-```
-nix develop
+```bash
+gitcuttle new -b feature/login
 ```
 
-NOTE: If you rename scripts in pyproject.toml, you may need to delete and recreate .venv
+Create an octopus workspace from multiple parent branches:
+
+```bash
+gitcuttle new main release/hotfix -b integration/main-hotfix
+```
+
+List tracked workspaces:
+
+```bash
+gitcuttle list
+```
+
+Delete a tracked workspace:
+
+```bash
+gitcuttle delete feature/login
+```
+
+Preview prune actions without side effects:
+
+```bash
+gitcuttle prune --dry-run
+gitcuttle prune --dry-run --json
+```
+
+Update the current workspace:
+
+```bash
+gitcuttle update
+```
+
+Absorb octopus post-merge commits:
+
+```bash
+gitcuttle absorb
+gitcuttle absorb parent-branch
+gitcuttle absorb -i
+```
+
+## Major flow details
+
+### 1) Create (`new`)
+
+- Creates a branch and workspace under `$XDG_DATA_HOME/gitcuttle/<repo-id>/<branch-dir>`.
+- Supports standard and octopus creation flows.
+- Preserves original branch names in metadata even when filesystem path names
+  are sanitized.
+
+```bash
+gitcuttle new [BASE] -b <branch-name>
+gitcuttle new <parent-1> <parent-2> [parent-N...] -b <octopus-branch>
+```
+
+### 2) Inspect (`list`)
+
+- Shows tracked workspaces with local status and remote/PR context.
+- Degrades gracefully when remote/PR data is unavailable.
+
+```bash
+gitcuttle list
+```
+
+### 3) Update (`update`)
+
+- Non-octopus workspaces rebase onto upstream when configured.
+- Octopus workspaces rebuild from parent branches and replay post-merge commits.
+
+```bash
+gitcuttle update
+```
+
+### 4) Absorb (`absorb`)
+
+- Octopus-only flow to move post-merge commits onto parent branches.
+- Supports explicit target mode, heuristic mode, and interactive selection.
+
+```bash
+gitcuttle absorb [parent-branch] [-i]
+```
+
+### 5) Remove (`delete`, `prune`)
+
+- `delete` removes one tracked workspace branch/worktree.
+- `prune` removes workspaces that are merged or no longer have a local branch.
+- Both support safety gates, force mode, and dry-run planning output.
+
+```bash
+gitcuttle delete <branch> [--force] [--dry-run] [--json]
+gitcuttle prune [--force] [--dry-run] [--json]
+```
+
+## Navigation-friendly output
+
+Commands that conceptually navigate to a workspace path support
+`-d, --destination`, which prints path-only output for shell aliases/functions.
+
+```bash
+gitcuttle --destination
+```
+
+## Related docs
+
+- [`DESIGN.md`](DESIGN.md): strict behavior and command contracts
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md): rollback and git-state recovery
+- [`INTEGRATION_TEST_MATRIX.md`](INTEGRATION_TEST_MATRIX.md): user-visible
+  behavior coverage

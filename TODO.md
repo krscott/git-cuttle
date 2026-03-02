@@ -64,5 +64,5 @@
 ## Documentation and Release Readiness
 
 - [ ] Keep `DESIGN.md` and implementation behavior synchronized as features land.
-- [ ] Add/update user-facing command docs and examples for all major flows.
+- [x] Add/update user-facing command docs and examples for all major flows.
 - [x] Add operational troubleshooting docs for rollback recovery and common git-state errors.
