@@ -44,7 +44,7 @@ implementation work and user-visible automated test coverage.
   mutating prune outcomes. Explicitly add ahead-of-remote and no-upstream
   safety gates required by `DESIGN.md`.
 
-- [ ] [P1] Story: Deliver `gitcuttle update` end-to-end for standard and octopus
+- [x] [P1] Story: Deliver `gitcuttle update` end-to-end for standard and octopus
   workspaces.
   Include non-octopus upstream rebasing, octopus parent update/rebuild/replay
   behavior, no-upstream error paths, and integration tests validating branch

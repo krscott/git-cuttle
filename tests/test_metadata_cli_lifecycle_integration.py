@@ -65,7 +65,7 @@ def test_cli_mutating_command_migrates_existing_metadata(tmp_path: Path) -> None
     metadata_dir = xdg_data_home / "gitcuttle"
     metadata_dir.mkdir(parents=True)
     metadata_path = metadata_dir / "workspaces.json"
-    legacy_payload = {
+    legacy_payload: dict[str, object] = {
         "version": 0,
         "repos": {
             str(canonical_git_dir): {
@@ -86,7 +86,8 @@ def test_cli_mutating_command_migrates_existing_metadata(tmp_path: Path) -> None
 
     result = _run_cli(cwd=repo, args=["update"], env=env)
 
-    assert result.returncode == 0
+    assert result.returncode == 2
+    assert "error[workspace-not-tracked]: current branch is not a tracked workspace" in result.stderr
 
     migrated = json.loads(metadata_path.read_text())
     assert migrated["version"] == 1
@@ -112,7 +113,8 @@ def test_cli_mutating_command_uses_home_fallback_path(tmp_path: Path) -> None:
 
     result = _run_cli(cwd=repo, args=["update"], env=env)
 
-    assert result.returncode == 0
+    assert result.returncode == 2
+    assert "error[workspace-not-tracked]: current branch is not a tracked workspace" in result.stderr
 
     metadata_path = home_dir / ".local" / "share" / "gitcuttle" / "workspaces.json"
     assert metadata_path.exists()

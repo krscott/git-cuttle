@@ -1,10 +1,12 @@
 from pathlib import Path
+import subprocess
 from typing import Protocol
 
 from git_cuttle.errors import AppError
-from git_cuttle.git_ops import in_git_repo, in_progress_operation
+from git_cuttle.git_ops import canonical_git_dir, in_git_repo, in_progress_operation, repo_root
 from git_cuttle.lib import Options
-from git_cuttle.metadata_manager import MetadataManager
+from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata
+from git_cuttle.update import update_non_octopus_workspace, update_octopus_workspace
 
 
 MUTATING_COMMANDS = frozenset({"new", "delete", "prune", "update", "absorb"})
@@ -51,10 +53,21 @@ def run(
     if command_requires_auto_tracking(command_name):
         tracker.ensure_repo_tracked(cwd=effective_cwd)
 
-    _dispatch_command(command_name=command_name, opts=opts)
+    _dispatch_command(
+        command_name=command_name,
+        opts=opts,
+        cwd=effective_cwd,
+        metadata_manager=tracker,
+    )
 
 
-def _dispatch_command(*, command_name: str, opts: Options) -> None:
+def _dispatch_command(
+    *,
+    command_name: str,
+    opts: Options,
+    cwd: Path,
+    metadata_manager: RepoTracker,
+) -> None:
     if command_name == "new":
         _run_new(opts=opts)
         return
@@ -68,7 +81,8 @@ def _dispatch_command(*, command_name: str, opts: Options) -> None:
         _run_prune(opts=opts)
         return
     if command_name == "update":
-        _run_update(opts=opts)
+        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        _run_update(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "absorb":
         _run_absorb(opts=opts)
@@ -116,9 +130,89 @@ def _run_prune(*, opts: Options) -> None:
     print("prune:invoked")
 
 
-def _run_update(*, opts: Options) -> None:
+def _run_update(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
     _ = opts
-    print("update:invoked")
+    repo = _tracked_repo_for_cwd(cwd=cwd, metadata_manager=metadata_manager)
+    workspace = _current_workspace(cwd=cwd, repo=repo)
+
+    if workspace.kind == "octopus":
+        octopus_result = update_octopus_workspace(
+            repo_root=repo.repo_root,
+            workspace=workspace,
+            default_remote=repo.default_remote,
+        )
+        print(
+            f"rebuilt octopus workspace {octopus_result.branch} from {', '.join(octopus_result.parent_refs)}; "
+            f"replayed {len(octopus_result.replayed_commits)} commit(s)"
+        )
+        return
+
+    standard_result = update_non_octopus_workspace(
+        repo_root=repo.repo_root,
+        workspace=workspace,
+        default_remote=repo.default_remote,
+    )
+    print(f"updated standard workspace {standard_result.branch} onto {standard_result.upstream_ref}")
+
+
+def _tracked_repo_for_cwd(*, cwd: Path, metadata_manager: MetadataManager) -> RepoMetadata:
+    repo_git_dir = canonical_git_dir(cwd)
+    if repo_git_dir is None:
+        raise AppError(
+            code="not-in-git-repo",
+            message="gitcuttle must be run from within a git repository",
+        )
+
+    metadata = metadata_manager.read()
+    repo = metadata.repos.get(str(repo_git_dir))
+    if repo is None:
+        raise AppError(
+            code="repo-not-tracked",
+            message="repository metadata is missing",
+            guidance=("rerun the command to retry auto-tracking",),
+        )
+    return repo
+
+
+def _current_workspace(*, cwd: Path, repo: RepoMetadata) -> WorkspaceMetadata:
+    branch = _current_branch(cwd=cwd)
+    if branch is None:
+        raise AppError(
+            code="detached-head",
+            message="cannot update from a detached HEAD state",
+            guidance=("checkout a branch and retry",),
+        )
+
+    workspace = repo.workspaces.get(branch)
+    if workspace is None:
+        raise AppError(
+            code="workspace-not-tracked",
+            message="current branch is not a tracked workspace",
+            details=branch,
+            guidance=("run `gitcuttle list` to inspect tracked workspaces",),
+        )
+    return workspace
+
+
+def _current_branch(*, cwd: Path) -> str | None:
+    root = repo_root(cwd)
+    if root is None:
+        return None
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=root,
+    )
+    if result.returncode != 0:
+        return None
+
+    branch = result.stdout.strip()
+    if branch == "" or branch == "HEAD":
+        return None
+    return branch
 
 
 def _run_absorb(*, opts: Options) -> None:
