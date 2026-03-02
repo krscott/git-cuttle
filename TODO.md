@@ -5,16 +5,16 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [x] [P1] Story: Add CLI integration coverage for workspace path collision handling.
-  `DESIGN.md` requires deterministic suffixes when two branch names sanitize to
-  the same workspace directory. Add an end-to-end `gitcuttle new` integration
-  test that creates colliding branch names, asserts unique deterministic
-  `--destination` paths, and validates persisted metadata remains keyed by the
-  original unsanitized branch names.
+- [ ] [P1] Story: Restore mypy clean run for rollback helper usage.
+  `python -m mypy .` currently fails with `attr-defined` errors in
+  `tests/test_delete_prune_integration.py` when referencing
+  `workspace_transaction.remove_backup_refs`. Update exports or call sites so
+  both rollback-failure integration tests type-check cleanly while preserving
+  existing behavior.
 
-- [x] [P1] Story: Add integration-first coverage for metadata schema invariants.
-  The integration matrix still points key persistent-data requirements to unit
-  tests (`tests/test_metadata_manager.py`). Add black-box CLI integration cases
-  that exercise canonical repo identity and schema invariant failures through
-  command flows, then update `INTEGRATION_TEST_MATRIX.md` references so these
-  DESIGN requirements are backed by integration tests.
+- [ ] [P2] Story: Ensure workspace-path DESIGN row is backed by CLI integration references.
+  `INTEGRATION_TEST_MATRIX.md` marks Workspace path derivation as covered but
+  currently references `tests/test_workspace_paths.py` (unit-level). Add/expand
+  CLI integration assertions for `<repo-slug>-<hash8>` and deterministic
+  collision suffix behavior, then point the matrix row at those integration
+  tests.

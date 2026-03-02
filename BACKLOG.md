@@ -17,3 +17,11 @@ Nice-to-have improvements discovered during PR review.
 - [ ] Add a CI job that regenerates and uploads a DESIGN compliance report
   artifact (covered/planned counts by section) to make review regressions
   easier to spot.
+
+- [ ] Add a required CI type-check gate that runs both `python -m mypy .` and
+  `python -m pyright` on pull requests, so typed-test regressions are caught
+  before review handoff.
+
+- [ ] Add a tiny automation script that verifies every `covered` matrix row in
+  `INTEGRATION_TEST_MATRIX.md` references at least one `@pytest.mark.integration`
+  test ID.
