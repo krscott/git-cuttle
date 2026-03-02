@@ -1,68 +1,75 @@
 # Implementation TODO
 
-## Foundation
+This file tracks remaining delivery stories. Each story includes both
+implementation work and user-visible automated test coverage.
 
-- [x] Finalize module boundaries (`CLI`, `Orchestrator`, `Git ops`, `Metadata manager`) and wire entry points.
-- [x] Define shared error model and user-facing error formatting for all commands.
-- [x] Standardize command/flag conventions (short + long flags, shared `--destination` behavior for navigation-style commands).
+## Stories
 
-## Metadata and Persistence
+- [ ] [P0] Story: Ship CLI subcommand architecture for `new`, `list`, `delete`, `prune`,
+  `update`, and `absorb`.
+  Include argparse subparser wiring, shared flag conventions, command dispatch
+  through orchestrator, and black-box CLI tests for help text, argument
+  validation, and per-command invocation paths. This must replace the current
+  template greeting CLI behavior.
 
-- [x] Implement `workspaces.json` schema v1 read/write models with validation and invariants.
-- [x] Use git dir realpath as canonical repo identity and enforce repo/workspace key consistency.
-- [x] Implement atomic metadata writes (temp file + fsync + rename).
-- [x] Implement schema migration framework with pre-migration backup creation.
-- [x] Implement workspace path derivation (`<repo-id>/<branch-dir>`) including deterministic collision handling.
+- [ ] [P0] Story: Deliver `gitcuttle new` end-to-end for standard and octopus workspace
+  creation.
+  Include base resolution rules, branch existence checks (local and upstream),
+  deterministic destination path behavior, metadata persistence, and integration
+  tests that execute the CLI from both repo root and worktree contexts.
+  Explicitly align base default behavior with `DESIGN.md` (default to current
+  commit) and enforce remote branch-existence checks when upstream context
+  exists.
 
-## Core Safety and Transactions
+- [ ] [P1] Story: Deliver `gitcuttle list` end-to-end with stable table rendering and
+  graceful unknown markers.
+  Include metadata loading, remote ahead/behind + PR status resolution,
+  short-TTL caching behavior, and integration tests for online, offline,
+  unauthenticated, and non-GitHub remote scenarios. Ensure output columns and
+  PR state presentation match `DESIGN.md` (including repo, dirty, and
+  description fields).
 
-- [x] Implement transactional operation framework for multi-branch/worktree changes.
-- [x] Implement git backup refs under `refs/gitcuttle/txn/<txn-id>/...` for touched branches.
-- [x] Implement full rollback for refs, worktrees, and metadata on failure.
-- [x] Implement rollback-failure reporting with explicit partial-state output and deterministic recovery commands.
-- [x] Enforce clean-operation policy (no merge/rebase/cherry-pick conflicts accepted).
+- [ ] [P0] Story: Deliver `gitcuttle delete` end-to-end with safety gates and plan
+  output contracts.
+  Include tracked-workspace validation, dirty/ahead/no-upstream blocking,
+  current-workspace deletion protection, `--force`, `--dry-run`, and `--json`
+  behavior, with integration tests that assert both blocked and allowed flows.
+  Explicitly resolve current implementation drift where `--force` currently
+  bypasses current-workspace protection.
 
-## Repository Context and Tracking
+- [ ] [P0] Story: Deliver `gitcuttle prune` end-to-end for merged-PR and missing-branch
+  cleanup.
+  Include prune candidate selection, unknown PR status handling as not merged,
+  safety gates with force overrides, and integration tests for dry-run/json and
+  mutating prune outcomes. Explicitly add ahead-of-remote and no-upstream
+  safety gates required by `DESIGN.md`.
 
-- [x] Implement repo context detection and hard error outside git repos.
-- [x] Implement auto-tracking for mutating commands only (`new`, `delete`, `prune`, `update`, `absorb`).
-- [x] Ensure commands behave consistently from repo root and worktree directories.
+- [ ] [P1] Story: Deliver `gitcuttle update` end-to-end for standard and octopus
+  workspaces.
+  Include non-octopus upstream rebasing, octopus parent update/rebuild/replay
+  behavior, no-upstream error paths, and integration tests validating branch
+  history transformations and conflict/error guidance.
 
-## Command Implementation
+- [ ] [P1] Story: Deliver `gitcuttle absorb` end-to-end for octopus workspaces.
+  Include explicit target mode, interactive target selection mode, heuristic
+  mapping with ambiguity failures, and integration tests that verify commit
+  movement semantics and user-facing failure messaging. Validate implementation
+  semantics against `DESIGN.md` absorb wording and update behavior/tests if
+  needed for strict contract alignment.
 
-- [x] Implement `gitcuttle new` for standard workspace creation (base resolution, branch creation, destination output).
-- [x] Implement octopus `gitcuttle new` (n-way merge creation, ordered parent tracking).
-- [x] Implement `gitcuttle list` table output with required columns and graceful unknown markers.
-- [x] Implement `gitcuttle delete` with tracked-workspace checks, safety gates, `--force`, `--dry-run`, and `--json` plan output.
-- [x] Implement `gitcuttle prune` with merged-PR or missing-local-branch criteria, safety gates, `--force`, `--dry-run`, and `--json` plan output.
-- [x] Implement `gitcuttle update` for non-octopus branches (upstream rebase rules + no-upstream error path).
-- [x] Implement octopus `gitcuttle update` rebuild flow (parent updates, new n-way merge, replay post-merge commits, no direct octopus upstream rebase).
-- [x] Implement `gitcuttle absorb` (explicit target branch mode, interactive `-i`, heuristic mode with confidence failure behavior).
+- [ ] [P0] Story: Enforce transactional safety guarantees for all mutating commands.
+  Include backup ref lifecycle, rollback of refs/worktrees/metadata, and
+  deterministic partial-state recovery output, with integration tests that
+  inject failures mid-transaction and during rollback.
 
-## Remote/PR Integration and Caching
+- [ ] [P0] Story: Finalize metadata lifecycle behavior through CLI flows.
+  Include auto-tracking for mutating commands only, no-tracking side effects for
+  read-only commands, migration + backup behavior in real command execution, and
+  integration tests that verify persistence invariants over repeated runs.
+  Also validate metadata path/fallback behavior used in implementation and keep
+  docs/spec wording consistent.
 
-- [x] Implement remote ahead/behind status integration per tracked workspace.
-- [x] Implement PR status/title integration against each workspace's tracked remote.
-- [x] Implement short-TTL status cache (default 60s) used by `list`.
-- [x] Ensure cache refresh never creates tracking entries.
-- [x] Ensure prune treats unknown/unavailable PR status as not merged.
-
-## Output and UX Contracts
-
-- [x] Implement actionable guidance messages for all blocked/error states.
-- [x] Implement `--destination` output contract (path-only stdout mode).
-- [x] Implement human-readable dry-run plans and machine-readable `--json` plans.
-
-## Testing
-
-- [x] Build integration test matrix covering user-visible behavior and command contracts in `DESIGN.md`.
-- [x] Add integration tests for safety-critical flows (transaction rollback, rollback failure path, no-upstream blocking, force overrides).
-- [x] Add integration tests for octopus `new`/`update` workflows, including parent-ref ambiguity handling.
-- [x] Add integration tests for delete/prune edge cases (current workspace deletion block, missing local branch prune, unknown PR state behavior).
-- [x] Add integration tests for metadata/migration behavior (schema validation, backup creation, migration correctness).
-
-## Documentation and Release Readiness
-
-- [x] Keep `DESIGN.md` and implementation behavior synchronized as features land.
-- [x] Add/update user-facing command docs and examples for all major flows.
-- [x] Add operational troubleshooting docs for rollback recovery and common git-state errors.
+- [ ] [P2] Story: Align user documentation with shipped CLI behavior.
+  Include README command examples, troubleshooting guidance for blocked states,
+  and test-backed validation of documented command output snippets where
+  practical.
