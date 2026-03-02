@@ -105,3 +105,31 @@ implementation work and user-visible automated test coverage.
   absorb failure when current workspace is non-octopus, prune missing-local-
   branch cleanup (metadata + directory), and list cache-refresh behavior that
   never creates tracking entries.
+
+- [ ] [P0] Story: Enforce transaction + backup-ref atomicity for all mutating
+  command paths.
+  Wire `new`, `delete`, `prune`, `update`, and `absorb` through a shared
+  transaction runner that creates `refs/gitcuttle/txn/<txn-id>/...` backups
+  before ref mutations, applies git/worktree changes before metadata writes,
+  and restores refs/worktrees/metadata on failure. Add integration coverage for
+  mid-flight failures and backup-ref cleanup.
+
+- [ ] [P0] Story: Surface rollback partial-state recovery contract in CLI error
+  handling.
+  Catch transaction rollback failures at the CLI boundary and print exact
+  partial-state details plus deterministic recovery commands per DESIGN. Add
+  integration tests that assert user-visible stderr content for rollback-failed
+  scenarios.
+
+- [ ] [P1] Story: Align `gitcuttle absorb <parent>` explicit-target semantics
+  with DESIGN.
+  Replace direct cherry-pick/reset behavior with the required rebase of
+  post-merge commits onto the selected parent and octopus merge
+  rebase/reconstruction flow. Add commit-graph integration assertions for
+  explicit-target absorb behavior.
+
+- [x] [P1] Story: Use actual git upstream configuration for `update` decisions.
+  For non-octopus updates, require and use the branch's configured upstream
+  (error when absent). For octopus parent updates, rebase each parent only when
+  that parent has an upstream configured; otherwise use local tip. Add
+  integration tests for upstream-present and upstream-absent cases.

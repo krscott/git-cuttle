@@ -127,6 +127,40 @@ def test_update_non_octopus_fails_when_no_upstream_is_configured(
 
 
 @pytest.mark.integration
+def test_update_non_octopus_requires_branch_upstream_not_metadata_remote(
+    tmp_path: Path,
+) -> None:
+    _, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "feature/metadata-upstream"])
+    (local / "feature.txt").write_text("local\n")
+    _git(cwd=local, args=["add", "feature.txt"])
+    _git(cwd=local, args=["commit", "-m", "feature commit"])
+    _git(cwd=local, args=["push", "-u", "origin", "feature/metadata-upstream"])
+    _git(cwd=local, args=["branch", "--unset-upstream", "feature/metadata-upstream"])
+
+    workspace = WorkspaceMetadata(
+        branch="feature/metadata-upstream",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="standard",
+        base_ref="main",
+        octopus_parents=(),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        update_non_octopus_workspace(
+            repo_root=local,
+            workspace=workspace,
+            default_remote="origin",
+        )
+
+    assert exc_info.value.code == "no-upstream"
+
+
+@pytest.mark.integration
 def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_commits(
     tmp_path: Path,
 ) -> None:
@@ -290,6 +324,79 @@ def test_update_octopus_rebases_parent_onto_remote_then_uses_updated_local_tip(
         check=False,
     ).returncode == 0
 
+
+@pytest.mark.integration
+def test_update_octopus_skips_parent_without_upstream_even_when_remote_exists(
+    tmp_path: Path,
+) -> None:
+    bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "release"])
+    (local / "release.txt").write_text("release local v1\n")
+    _git(cwd=local, args=["add", "release.txt"])
+    _git(cwd=local, args=["commit", "-m", "release local v1"])
+    _git(cwd=local, args=["push", "-u", "origin", "release"])
+    _git(cwd=local, args=["branch", "--unset-upstream", "release"])
+
+    _git(cwd=local, args=["checkout", "main"])
+    _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
+
+    upstream_writer = tmp_path / "upstream-writer"
+    _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
+    _git(cwd=upstream_writer, args=["config", "user.name", "Test User"])
+    _git(cwd=upstream_writer, args=["config", "user.email", "test@example.com"])
+
+    _git(cwd=upstream_writer, args=["checkout", "main"])
+    (upstream_writer / "main.txt").write_text("main remote v2\n")
+    _git(cwd=upstream_writer, args=["add", "main.txt"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "main remote v2"])
+    _git(cwd=upstream_writer, args=["push", "origin", "main"])
+
+    _git(cwd=upstream_writer, args=["checkout", "release"])
+    (upstream_writer / "release.txt").write_text("release remote v2\n")
+    _git(cwd=upstream_writer, args=["add", "release.txt"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "release remote v2"])
+    _git(cwd=upstream_writer, args=["push", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "release"])
+    (local / "release-local-only.txt").write_text("local only\n")
+    _git(cwd=local, args=["add", "release-local-only.txt"])
+    _git(cwd=local, args=["commit", "-m", "release local only"])
+    local_release_head = _git(
+        cwd=local, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
+
+    workspace = WorkspaceMetadata(
+        branch="integration/main-release",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="octopus",
+        base_ref="main",
+        octopus_parents=("main", "release"),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+
+    result = update_octopus_workspace(
+        repo_root=local,
+        workspace=workspace,
+        default_remote="origin",
+    )
+
+    updated_release_head = _git(
+        cwd=local, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
+    assert updated_release_head == local_release_head
+    assert _git(
+        cwd=local,
+        args=["merge-base", "--is-ancestor", "origin/release", "release"],
+        check=False,
+    ).returncode != 0
+    assert result.parent_refs == ("main", "release")
 
 @pytest.mark.integration
 def test_update_octopus_uses_local_parent_tips_when_no_remote_is_configured(

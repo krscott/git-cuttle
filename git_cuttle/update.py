@@ -44,34 +44,33 @@ def update_non_octopus_workspace(
             guidance=("run octopus-specific update once implemented",),
         )
 
-    upstream_ref = _workspace_upstream_ref(
-        workspace=workspace, default_remote=default_remote
-    )
+    upstream_ref = _branch_upstream_ref(repo_root=repo_root, branch=workspace.branch)
     if upstream_ref is None:
         raise AppError(
             code="no-upstream",
             message="workspace has no upstream remote branch configured",
             details=workspace.branch,
             guidance=(
-                "set tracked_remote metadata or configure a default remote for this repository",
+                f"run `git branch --set-upstream-to <remote>/<branch> {workspace.branch}` and retry",
             ),
         )
 
-    remote_name = upstream_ref.split("/", maxsplit=1)[0]
-    _git(
-        repo_root=repo_root,
-        args=["fetch", remote_name],
-        code="update-fetch-failed",
-        message="failed to fetch upstream",
-    )
+    remote_name = _remote_name_for_ref(repo_root=repo_root, ref=upstream_ref)
+    if remote_name is not None:
+        _git(
+            repo_root=repo_root,
+            args=["fetch", remote_name],
+            code="update-fetch-failed",
+            message="failed to fetch upstream",
+        )
 
-    if _rev_parse(repo_root=repo_root, ref=f"refs/remotes/{upstream_ref}") is None:
+    if _rev_parse(repo_root=repo_root, ref=upstream_ref) is None:
         raise AppError(
             code="no-upstream",
-            message="workspace upstream remote branch does not exist",
+            message="workspace upstream branch does not exist",
             details=upstream_ref,
             guidance=(
-                "push the branch to the remote or configure a different upstream",
+                "push the upstream branch or configure a different upstream",
             ),
         )
 
@@ -111,22 +110,12 @@ def update_octopus_workspace(
             details=workspace.branch,
         )
 
-    remote_name = workspace.tracked_remote or default_remote
-    if remote_name is not None:
-        _git(
-            repo_root=repo_root,
-            args=["fetch", remote_name],
-            code="update-fetch-failed",
-            message="failed to fetch octopus parent refs",
-        )
-
     _ensure_workspace_clean_for_octopus_update(workspace=workspace)
     original_branch = _current_branch(repo_root=repo_root)
 
     updated_parent_refs = tuple(
         _update_octopus_parent(
             repo_root=repo_root,
-            remote_name=remote_name,
             parent_ref=parent_ref,
         )
         for parent_ref in workspace.octopus_parents
@@ -190,15 +179,6 @@ def update_octopus_workspace(
     )
 
 
-def _workspace_upstream_ref(
-    *, workspace: WorkspaceMetadata, default_remote: str | None
-) -> str | None:
-    remote_name = workspace.tracked_remote or default_remote
-    if remote_name is None:
-        return None
-    return f"{remote_name}/{workspace.branch}"
-
-
 def _branch_head(*, repo_root: Path, branch: str) -> str:
     branch_oid = _rev_parse(repo_root=repo_root, ref=f"refs/heads/{branch}")
     if branch_oid is None:
@@ -212,22 +192,40 @@ def _branch_head(*, repo_root: Path, branch: str) -> str:
 
 
 def _update_octopus_parent(
-    *, repo_root: Path, remote_name: str | None, parent_ref: str
+    *, repo_root: Path, parent_ref: str
 ) -> str:
     local_ref = f"refs/heads/{parent_ref}"
     if _rev_parse(repo_root=repo_root, ref=local_ref) is not None:
-        if remote_name is None:
+        upstream_ref = _branch_upstream_ref(repo_root=repo_root, branch=parent_ref)
+        if upstream_ref is None:
             return parent_ref
 
-        remote_tracking_ref = f"refs/remotes/{remote_name}/{parent_ref}"
-        if _rev_parse(repo_root=repo_root, ref=remote_tracking_ref) is None:
-            return parent_ref
+        remote_name = _remote_name_for_ref(repo_root=repo_root, ref=upstream_ref)
+        if remote_name is not None:
+            _git(
+                repo_root=repo_root,
+                args=["fetch", remote_name],
+                code="update-fetch-failed",
+                message="failed to fetch octopus parent refs",
+            )
+
+        if _rev_parse(repo_root=repo_root, ref=upstream_ref) is None:
+            raise AppError(
+                code="octopus-parent-upstream-missing",
+                message="octopus parent upstream branch does not exist",
+                details=upstream_ref,
+                guidance=(
+                    "push the upstream branch or configure a different upstream",
+                ),
+            )
 
         _git(
             repo_root=repo_root,
-            args=["rebase", f"{remote_name}/{parent_ref}", parent_ref],
+            args=["rebase", upstream_ref, parent_ref],
             code="octopus-parent-update-failed",
-            message=f"failed to rebase octopus parent {parent_ref} onto upstream",
+            message=(
+                f"failed to rebase octopus parent {parent_ref} onto upstream"
+            ),
         )
         return parent_ref
 
@@ -340,6 +338,53 @@ def _current_branch(*, repo_root: Path) -> str | None:
     if branch == "" or branch == "HEAD":
         return None
     return branch
+
+
+def _branch_upstream_ref(*, repo_root: Path, branch: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{upstream}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+    upstream_ref = result.stdout.strip()
+    if upstream_ref == "":
+        return None
+    return upstream_ref
+
+
+def _remote_name_for_ref(*, repo_root: Path, ref: str) -> str | None:
+    if ref.startswith("refs/remotes/"):
+        parts = ref.split("/", maxsplit=3)
+        if len(parts) >= 3:
+            candidate = parts[2]
+            if _is_remote_name(repo_root=repo_root, name=candidate):
+                return candidate
+        return None
+
+    candidate, _, _ = ref.partition("/")
+    if candidate == "":
+        return None
+    if _is_remote_name(repo_root=repo_root, name=candidate):
+        return candidate
+    return None
+
+
+def _is_remote_name(*, repo_root: Path, name: str) -> bool:
+    result = subprocess.run(
+        ["git", "remote"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return False
+    remote_names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return name in remote_names
 
 
 def _checkout_branch(*, repo_root: Path, branch: str) -> None:
