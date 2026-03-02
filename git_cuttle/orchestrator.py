@@ -23,4 +23,8 @@ def run(
         )
 
     _ = metadata_manager or MetadataManager()
+    if opts.destination:
+        print(effective_cwd.resolve())
+        return
+
     greet(opts)

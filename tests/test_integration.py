@@ -48,6 +48,19 @@ def test_cli_default_name() -> None:
 
 
 @pytest.mark.integration
+def test_cli_destination_outputs_path_only() -> None:
+    result = subprocess.run(
+        ["gitcuttle", "--destination"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(pathlib.Path.cwd().resolve())
+    assert result.stderr == ""
+
+
+@pytest.mark.integration
 def test_cli_verbose_flag() -> None:
     """Test CLI with --verbose flag shows debug output."""
     result = subprocess.run(

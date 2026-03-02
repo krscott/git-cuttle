@@ -17,6 +17,11 @@ class CliOpts:
 
         parser.add_argument("name", nargs="?", default="World", help="Your name")
         parser.add_argument(
+            "--destination",
+            action="store_true",
+            help="print destination path only",
+        )
+        parser.add_argument(
             "-v",
             "--verbose",
             action=EnvAction,
@@ -28,7 +33,7 @@ class CliOpts:
         args = parser.parse_args()
 
         return CliOpts(
-            app_opts=Options(name=args.name),
+            app_opts=Options(name=args.name, destination=args.destination),
             verbose=args.verbose is not None,
         )
 
