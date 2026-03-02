@@ -5,20 +5,17 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [x] [P0] Story: Make `AppError` compatible with Python exception traceback handling.
-  Current `@dataclass(frozen=True)` behavior can raise `FrozenInstanceError`
-  while propagating exceptions through context managers (observed under pytest),
-  masking the real command failure. Preserve stable error formatting while
-  allowing normal exception traceback assignment and add regression coverage.
+- [ ] [P0] Story: Fix delete dry-run JSON integration contract to match DESIGN safety gates.
+  `tests/test_delete_prune_integration.py::test_delete_dry_run_json_outputs_plan_without_changes`
+  currently expects success without an upstream and fails against current behavior.
+  `DESIGN.md` requires delete dry-run to enforce the same no-upstream safety
+  block as mutating delete unless `--force` is used. Update the integration
+  scenario and assertions so dry-run JSON still has no side effects while
+  honoring the required upstream gate.
 
-- [x] [P0] Story: Align delete dry-run integration expectations with DESIGN safety gates.
-  `DESIGN.md` requires delete to block when no upstream is configured unless
-  `--force` is provided; current integration tests still expect successful
-  dry-run output in no-upstream repos. Update integration fixtures/expectations
-  so `delete --dry-run` and `delete --dry-run --json` reflect the same upstream
-  safety contract as mutating delete.
-
-- [x] [P1] Story: Refresh integration contract documentation to match shipped coverage.
-  `INTEGRATION_TEST_MATRIX.md` still marks major command and safety requirements
-  as `planned` despite implemented tests. Reconcile matrix status entries with
-  current test suite and add a lightweight check that prevents future drift.
+- [ ] [P1] Story: Add integration coverage proving `list` status cache TTL behavior.
+  `DESIGN.md` requires `list` to use a short status cache TTL (default 60s),
+  but current matrix marks this as planned and coverage is unit-level only.
+  Add black-box CLI integration tests that demonstrate cache reuse within TTL
+  and refresh after TTL expiry, and update `INTEGRATION_TEST_MATRIX.md` once
+  this requirement is covered.
