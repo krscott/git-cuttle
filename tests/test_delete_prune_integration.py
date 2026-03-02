@@ -271,6 +271,43 @@ def test_delete_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_delete_dry_run_matches_mutating_block_without_upstream(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    create_standard_workspace(
+        cwd=repo,
+        branch="feature/no-upstream-parity",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    with pytest.raises(AppError) as dry_run_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream-parity",
+            metadata_manager=manager,
+            dry_run=True,
+        )
+
+    with pytest.raises(AppError) as mutating_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream-parity",
+            metadata_manager=manager,
+        )
+
+    assert dry_run_exc_info.value.code == "no-upstream"
+    assert dry_run_exc_info.value.code == mutating_exc_info.value.code
+    assert dry_run_exc_info.value.message == mutating_exc_info.value.message
+
+
+@pytest.mark.integration
 def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
@@ -307,6 +344,60 @@ def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
         )
 
     assert exc_info.value.code == "workspace-ahead"
+
+
+@pytest.mark.integration
+def test_delete_dry_run_matches_mutating_block_when_ahead_of_upstream(
+    tmp_path: Path,
+) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-ahead-parity",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(
+        cwd=destination,
+        args=["push", "-u", "origin", "feature/delete-ahead-parity"],
+    )
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    with pytest.raises(AppError) as dry_run_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead-parity",
+            metadata_manager=manager,
+            dry_run=True,
+        )
+
+    with pytest.raises(AppError) as mutating_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead-parity",
+            metadata_manager=manager,
+        )
+
+    assert dry_run_exc_info.value.code == "workspace-ahead"
+    assert dry_run_exc_info.value.code == mutating_exc_info.value.code
+    assert dry_run_exc_info.value.message == mutating_exc_info.value.message
 
 
 @pytest.mark.integration

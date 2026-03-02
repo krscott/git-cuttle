@@ -109,7 +109,7 @@ def delete_workspace(
             guidance=("commit/stash changes or rerun with --force",),
         )
 
-    if not force and not dry_run:
+    if not force:
         upstream_ref = _workspace_upstream_ref(
             tracked_remote=workspace.tracked_remote,
             default_remote=repo.default_remote,

@@ -133,3 +133,26 @@ implementation work and user-visible automated test coverage.
   (error when absent). For octopus parent updates, rebase each parent only when
   that parent has an upstream configured; otherwise use local tip. Add
   integration tests for upstream-present and upstream-absent cases.
+
+- [ ] [P0] Story: Restore transactional atomicity guarantees across mutating commands.
+  Re-wire `new`, `delete`, `prune`, `update`, and `absorb` through shared
+  transaction steps so multi-branch/worktree mutations roll back fully on
+  failure. Enforce DESIGN's minimum contract: create backup refs under
+  `refs/gitcuttle/txn/<txn-id>/...` before ref mutation, apply git/worktree
+  changes before metadata write, restore refs/worktrees/metadata on failure,
+  and clean up temporary backup refs. Add integration coverage for mid-flight
+  failures and rollback-failure recovery output.
+
+- [ ] [P1] Story: Align explicit-target `absorb` semantics with DESIGN rebase flow.
+  Implement `gitcuttle absorb <parent>` by rebasing post-merge commits onto the
+  selected parent and then rebasing/reconstructing the octopus merge as
+  specified, instead of cherry-picking commits then hard-reset/merge rebuild.
+  Add integration tests that assert commit-graph behavior for explicit-target
+  absorb and conflict guidance parity.
+
+- [x] [P1] Story: Enforce delete safety gates consistently for dry-run plans.
+  Make `gitcuttle delete --dry-run` honor required no-upstream/ahead-of-upstream
+  blocking semantics (or emit explicit blocked-plan actions that preserve the
+  same safety contract) so dry-run output cannot imply an allowed delete that
+  mutating mode would reject. Add integration tests for blocked dry-run and
+  blocked mutating parity.
