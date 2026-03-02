@@ -129,6 +129,8 @@ def update_octopus_workspace(
         for parent_ref in workspace.octopus_parents
     )
 
+    _ensure_workspace_clean_for_octopus_update(workspace=workspace)
+
     before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
     replay_commits = _octopus_replay_commits(
         repo_root=repo_root,
@@ -139,32 +141,41 @@ def update_octopus_workspace(
     original_branch = _current_branch(repo_root=repo_root)
     _checkout_branch(repo_root=repo_root, branch=workspace.branch)
     try:
-        _git(
-            repo_root=repo_root,
-            args=["reset", "--hard", resolved_parent_refs[0]],
-            code="octopus-update-reset-failed",
-            message="failed to reset octopus workspace branch to first parent",
-        )
-        _git(
-            repo_root=repo_root,
-            args=[
-                "merge",
-                "--no-ff",
-                "-m",
-                f"Rebuild octopus workspace {workspace.branch}",
-                *resolved_parent_refs[1:],
-            ],
-            code="octopus-update-merge-failed",
-            message="failed to rebuild octopus merge commit",
-        )
-
-        if replay_commits:
+        try:
             _git(
                 repo_root=repo_root,
-                args=["cherry-pick", *replay_commits],
-                code="octopus-update-replay-failed",
-                message="failed to replay post-merge commits onto rebuilt octopus branch",
+                args=["reset", "--hard", resolved_parent_refs[0]],
+                code="octopus-update-reset-failed",
+                message="failed to reset octopus workspace branch to first parent",
             )
+            _git(
+                repo_root=repo_root,
+                args=[
+                    "merge",
+                    "--no-ff",
+                    "-m",
+                    f"Rebuild octopus workspace {workspace.branch}",
+                    *resolved_parent_refs[1:],
+                ],
+                code="octopus-update-merge-failed",
+                message="failed to rebuild octopus merge commit",
+            )
+
+            if replay_commits:
+                _git(
+                    repo_root=repo_root,
+                    args=["cherry-pick", *replay_commits],
+                    code="octopus-update-replay-failed",
+                    message="failed to replay post-merge commits onto rebuilt octopus branch",
+                )
+        except AppError as error:
+            _restore_octopus_branch_after_failure(
+                repo_root=repo_root,
+                branch=workspace.branch,
+                original_oid=before_oid,
+                cause=error,
+            )
+            raise
     finally:
         if original_branch is not None and original_branch != workspace.branch:
             _checkout_branch(repo_root=repo_root, branch=original_branch)
@@ -247,12 +258,68 @@ def _octopus_replay_commits(
     return commits
 
 
+def _ensure_workspace_clean_for_octopus_update(*, workspace: WorkspaceMetadata) -> None:
+    worktree_path = workspace.worktree_path
+    if not worktree_path.exists():
+        return
+    if not _worktree_has_uncommitted_changes(cwd=worktree_path):
+        return
+
+    raise AppError(
+        code="workspace-dirty",
+        message="workspace has uncommitted changes",
+        details=str(worktree_path),
+        guidance=("commit or stash changes, then retry update",),
+    )
+
+
+def _restore_octopus_branch_after_failure(
+    *,
+    repo_root: Path,
+    branch: str,
+    original_oid: str,
+    cause: AppError,
+) -> None:
+    try:
+        _git(
+            repo_root=repo_root,
+            args=["reset", "--hard", original_oid],
+            code="octopus-update-rollback-failed",
+            message="failed to restore octopus workspace branch after update failure",
+        )
+    except AppError as rollback_error:
+        cause_details = cause.details or cause.message
+        rollback_details = rollback_error.details or rollback_error.message
+        raise AppError(
+            code="octopus-update-rollback-failed",
+            message="octopus update failed and rollback could not restore the branch",
+            details=(
+                f"update error [{cause.code}]: {cause_details}; "
+                f"rollback error: {rollback_details}"
+            ),
+            guidance=(
+                f"checkout {branch} and run `git reset --hard {original_oid}` to recover",
+            ),
+        ) from cause
+
+
 def _is_merge_commit(*, repo_root: Path, commit: str) -> bool:
     parent_line = _git_stdout(
         repo_root=repo_root, args=["show", "-s", "--format=%P", commit]
     )
     parent_oids = [parent for parent in parent_line.split() if parent]
     return len(parent_oids) > 1
+
+
+def _worktree_has_uncommitted_changes(*, cwd: Path) -> bool:
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    return result.returncode == 0 and bool(result.stdout.strip())
 
 
 def _current_branch(*, repo_root: Path) -> str | None:
