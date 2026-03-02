@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P0] Story: Fix delete dry-run JSON integration contract to match DESIGN safety gates.
+- [x] [P0] Story: Fix delete dry-run JSON integration contract to match DESIGN safety gates.
   `tests/test_delete_prune_integration.py::test_delete_dry_run_json_outputs_plan_without_changes`
   currently expects success without an upstream and fails against current behavior.
   `DESIGN.md` requires delete dry-run to enforce the same no-upstream safety

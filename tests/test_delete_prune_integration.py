@@ -145,9 +145,19 @@ def test_delete_requires_tracked_workspace(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+
     repo = tmp_path / "repo"
-    repo.mkdir()
-    _init_repo(repo)
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
 
     metadata_path = tmp_path / "workspaces.json"
     manager = MetadataManager(path=metadata_path)
@@ -157,6 +167,7 @@ def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> Non
         base_ref="main",
         metadata_manager=manager,
     )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/delete-dry-run"])
 
     rendered = delete_workspace(
         cwd=repo,
@@ -170,6 +181,12 @@ def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> Non
     assert '"command": "delete"' in rendered
     assert '"dry_run": true' in rendered
     assert '"target": "feature/delete-dry-run"' in rendered
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-dry-run"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
     assert destination.exists()
     assert (
         "feature/delete-dry-run" in next(iter(manager.read().repos.values())).workspaces
