@@ -67,6 +67,10 @@ def restore_branch_step(
     rollback_error_code: str,
     rollback_error_message: str,
 ) -> TransactionStep:
+    recovery_commands = branch_restore_recovery_commands(
+        transaction=transaction,
+        branch=branch,
+    )
     return TransactionStep(
         name=f"restore-branch:{branch}",
         apply=lambda: None,
@@ -77,7 +81,17 @@ def restore_branch_step(
             error_code=rollback_error_code,
             error_message=rollback_error_message,
         ),
+        recovery_commands=recovery_commands,
     )
+
+
+def branch_restore_recovery_commands(
+    *,
+    transaction: Transaction,
+    branch: str,
+) -> tuple[str, ...]:
+    backup_ref = backup_ref_for_branch(txn_id=transaction.txn_id, branch=branch)
+    return (f"git update-ref refs/heads/{branch} {backup_ref}",)
 
 
 def cleanup_backup_refs_step(

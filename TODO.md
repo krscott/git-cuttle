@@ -13,7 +13,7 @@ implementation work and user-visible automated test coverage.
   backup-ref lifecycle so successful delete/prune runs do not mutate refs after
   metadata is committed, while preserving deterministic rollback/recovery.
 
-- [ ] [P1] Story: Add deterministic recovery commands for branch-restore rollback failures.
+- [x] [P1] Story: Add deterministic recovery commands for branch-restore rollback failures.
   `DESIGN.md` requires deterministic recovery commands whenever rollback is
   partial. In `delete`/`prune`, rollback of branch deletion uses
   `rollback_restore_branch(...)` but those `TransactionStep`s do not publish

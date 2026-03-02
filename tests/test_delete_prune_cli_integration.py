@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 import subprocess
 
 import pytest
@@ -24,6 +25,35 @@ def _init_repo(path: pathlib.Path) -> None:
     (path / "README.md").write_text("repo\n")
     _git(cwd=path, args=["add", "README.md"])
     _git(cwd=path, args=["commit", "-m", "init"])
+
+
+def _write_git_passthrough_with_update_ref_failure(
+    *,
+    script_path: pathlib.Path,
+    branch: str,
+    metadata_dir_to_lock: pathlib.Path | None = None,
+) -> None:
+    git_executable = shutil.which("git")
+    assert git_executable is not None
+    lock_metadata_snippet = ""
+    if metadata_dir_to_lock is not None:
+        lock_metadata_snippet = (
+            f"if [ \"${{1-}}\" = \"branch\" ] && [ \"${{3-}}\" = \"{branch}\" ]; then\n"
+            f"  chmod 500 \"{metadata_dir_to_lock}\"\n"
+            "fi\n"
+        )
+
+    script_path.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        f"{lock_metadata_snippet}"
+        f"if [ \"${{1-}}\" = \"update-ref\" ] && [ \"${{2-}}\" = \"refs/heads/{branch}\" ]; then\n"
+        "  printf 'simulated update-ref failure\\n' >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        f"exec \"{git_executable}\" \"$@\"\n"
+    )
+    script_path.chmod(0o755)
 
 
 @pytest.mark.integration
@@ -140,3 +170,116 @@ def test_cli_prune_reports_worktree_recovery_when_rollback_is_partial(
         f"git worktree add {workspace_path} feature/prune-worktree-rollback"
         in result.stderr
     )
+
+
+@pytest.mark.integration
+def test_cli_delete_reports_branch_recovery_when_branch_restore_rollback_fails(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    branch = "feature/delete-branch-rollback"
+    new_result = subprocess.run(
+        ["gitcuttle", "new", "-b", branch, "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert new_result.returncode == 0
+
+    metadata_dir = tmp_path / "xdg" / "gitcuttle"
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_git_passthrough_with_update_ref_failure(
+        script_path=bin_dir / "git",
+        branch=branch,
+        metadata_dir_to_lock=metadata_dir,
+    )
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    try:
+        result = subprocess.run(
+            ["gitcuttle", "delete", branch, "--force"],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+            env=env,
+        )
+    finally:
+        metadata_dir.chmod(0o700)
+
+    assert result.returncode == 2
+    assert "rollback failures:" in result.stderr
+    assert "deterministic recovery commands:" in result.stderr
+    assert f"git update-ref refs/heads/{branch} refs/gitcuttle/txn/" in result.stderr
+    assert f"/heads/{branch}" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_prune_reports_branch_recovery_when_branch_restore_rollback_fails(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    branch = "feature/prune-branch-rollback"
+
+    gh_path = bin_dir / "gh"
+    gh_path.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n"
+        "  printf '[{\"state\":\"MERGED\",\"isDraft\":false,\"title\":\"Merged\",\"url\":\"https://example.com/pr/1\"}]'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n"
+    )
+    gh_path.chmod(0o755)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    new_result = subprocess.run(
+        ["gitcuttle", "new", "-b", branch, "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert new_result.returncode == 0
+    _git(cwd=repo, args=["remote", "add", "origin", "https://github.com/acme/demo.git"])
+
+    metadata_dir = tmp_path / "xdg" / "gitcuttle"
+    _write_git_passthrough_with_update_ref_failure(
+        script_path=bin_dir / "git",
+        branch=branch,
+        metadata_dir_to_lock=metadata_dir,
+    )
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    try:
+        result = subprocess.run(
+            ["gitcuttle", "prune", "--force"],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+            env=env,
+        )
+    finally:
+        metadata_dir.chmod(0o700)
+
+    assert result.returncode == 2
+    assert "rollback failures:" in result.stderr
+    assert "deterministic recovery commands:" in result.stderr
+    assert f"git update-ref refs/heads/{branch} refs/gitcuttle/txn/" in result.stderr
+    assert f"/heads/{branch}" in result.stderr

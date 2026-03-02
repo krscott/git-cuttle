@@ -20,6 +20,7 @@ from git_cuttle.plan_output import (
 from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_transaction import (
     backup_refs_step,
+    branch_restore_recovery_commands,
     cleanup_backup_refs_post_commit,
     rollback_restore_branch,
     run_command_transaction,
@@ -573,5 +574,9 @@ def _delete_branch_step(
             branch=decision.branch,
             error_code="prune-rollback-failed",
             message="failed to restore pruned branch from backup ref",
+        ),
+        recovery_commands=branch_restore_recovery_commands(
+            transaction=transaction,
+            branch=decision.branch,
         ),
     )
