@@ -30,6 +30,7 @@ from git_cuttle.worktree_tracking import (
     precheck_worktree_target,
     remove_tracked_worktree_path,
     save_tracked_worktree,
+    tracked_worktree_metadata_path,
 )
 
 
@@ -326,8 +327,12 @@ def main(argv: list[str] | None = None) -> int:
                 if not has_worktree:
                     raise GitCuttleError("tracked worktree not found")
                 assert tracked_worktree is not None
+                metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
                 remove_tracked_worktree_path(tracked_worktree)
-                delete_tracked_worktree(tracked_worktree.branch)
+                delete_tracked_worktree(
+                    tracked_worktree.branch,
+                    metadata_path=metadata_path,
+                )
                 print(f"deleted tracked worktree: {tracked_worktree.branch}")
                 return 0
 
@@ -344,8 +349,12 @@ def main(argv: list[str] | None = None) -> int:
                     )
 
             if tracked_worktree is not None:
+                metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
                 remove_tracked_worktree_path(tracked_worktree)
-                delete_tracked_worktree(tracked_worktree.branch)
+                delete_tracked_worktree(
+                    tracked_worktree.branch,
+                    metadata_path=metadata_path,
+                )
 
             if target_workspace is not None:
                 delete_workspace(target_workspace.name)

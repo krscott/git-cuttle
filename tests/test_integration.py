@@ -228,6 +228,82 @@ def test_cli_worktree_print_path_success_and_failure() -> None:
 
 
 @pytest.mark.integration
+def test_cli_delete_worktree_only_succeeds_from_deleted_worktree_cwd() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+        _git(repo, "checkout", "main")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        create_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-a",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_result.returncode == 0
+
+        worktree_path = Path(create_result.stdout.strip())
+        assert worktree_path.exists()
+
+        delete_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "delete",
+                "feature-a",
+                "--worktree-only",
+            ],
+            cwd=worktree_path,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert delete_result.returncode == 0
+        assert "deleted tracked worktree: feature-a" in delete_result.stdout
+
+        list_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert list_result.returncode == 0
+        assert "no tracked workspaces or worktrees" in list_result.stdout
+        assert not worktree_path.exists()
+
+
+@pytest.mark.integration
 def test_cli_worktree_remote_fallback_prefers_origin() -> None:
     project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()

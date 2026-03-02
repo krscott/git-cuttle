@@ -92,10 +92,14 @@ def list_tracked_worktrees() -> list[TrackedWorktree]:
     return sorted(entries, key=lambda entry: entry.branch)
 
 
-def delete_tracked_worktree(branch: str) -> None:
-    path = _tracked_worktree_path(branch)
+def delete_tracked_worktree(branch: str, metadata_path: Path | None = None) -> None:
+    path = metadata_path or _tracked_worktree_path(branch)
     if path.exists():
         path.unlink()
+
+
+def tracked_worktree_metadata_path(branch: str) -> Path:
+    return _tracked_worktree_path(branch)
 
 
 def _xdg_data_home() -> Path:
