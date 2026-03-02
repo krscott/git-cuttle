@@ -60,6 +60,13 @@ In descending order, this project optimizes for:
   fail the command with a user-facing `GitCuttleError` (no Python traceback).
 - `TrackedWorktree(kind="workspace")` is valid only while the corresponding
   workspace config exists and matches the same branch/workspace pair.
+- `gitcuttle list` may show `path=...` on a workspace row only for a fully
+  matched workspace/worktree pair (same branch, `kind="workspace"`, same
+  `workspace_name`). A branch-kind record with the same branch name is not a
+  linked workspace pair.
+- Any workspace-kind tracked record that fails full pair validation (missing
+  workspace config or mismatched `workspace_name`) must be shown as an orphan
+  workspace worktree entry.
 - Deleting a tracked worktree path requires that metadata branch and on-disk
   worktree branch match; mismatches fail safely instead of removing any path.
 - `gitcuttle delete --workspace-only` on a linked workspace/worktree pair keeps
@@ -101,8 +108,9 @@ In descending order, this project optimizes for:
   - Pulls each parent branch (`git pull --ff-only`) then runs absorb flow.
 - `gitcuttle list`
   - Lists persisted workspaces and all tracked worktrees.
-  - If workspace-kind tracked metadata exists without a matching workspace config,
-    list shows it as an orphan entry.
+  - If workspace-kind tracked metadata lacks a full workspace pair match
+    (missing workspace config or mismatched `workspace_name`), list shows it as
+    an orphan entry.
 - `gitcuttle delete [workspace-or-branch]`
   - Removes tracked worktree path and tracked metadata when present.
   - Removes workspace metadata/ref when target is a workspace.

@@ -145,12 +145,17 @@ def _show_list() -> int:
         return 0
 
     tracked_by_branch = {tracked.branch: tracked for tracked in tracked_worktrees}
-    workspace_merge_branches = {workspace.merge_branch for workspace in workspaces}
+    workspace_by_merge_branch = {
+        workspace.merge_branch: workspace for workspace in workspaces
+    }
 
     for workspace in workspaces:
         branches = ", ".join(workspace.branches)
         tracked = tracked_by_branch.get(workspace.merge_branch)
-        if tracked is None:
+        if tracked is None or not _is_workspace_tracked_worktree_pair(
+            workspace=workspace,
+            tracked_worktree=tracked,
+        ):
             print(f"{workspace.name} [workspace]: parents={branches}")
         else:
             print(
@@ -159,7 +164,11 @@ def _show_list() -> int:
 
     for tracked in tracked_worktrees:
         if tracked.kind == "workspace":
-            if tracked.branch in workspace_merge_branches:
+            matching_workspace = workspace_by_merge_branch.get(tracked.branch)
+            if matching_workspace is not None and _is_workspace_tracked_worktree_pair(
+                workspace=matching_workspace,
+                tracked_worktree=tracked,
+            ):
                 continue
             workspace_name = tracked.workspace_name or tracked.branch
             print(

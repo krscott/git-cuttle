@@ -1049,6 +1049,22 @@ def test_cli_delete_requires_disambiguation_for_unlinked_collision() -> None:
         worktree_path = Path(branch_worktree_result.stdout.strip())
         assert worktree_path.exists()
 
+        list_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert list_result.returncode == 0
+        assert "ws [workspace]: parents=feature-a, feature-b\n" in list_result.stdout
+        assert (
+            f"ws [workspace]: parents=feature-a, feature-b path={worktree_path}"
+            not in list_result.stdout
+        )
+        assert f"ws [branch]: path={worktree_path}" in list_result.stdout
+
         ambiguous_delete = subprocess.run(
             [sys.executable, "-m", "git_cuttle", "delete", "ws"],
             cwd=repo,
@@ -1086,3 +1102,85 @@ def test_cli_delete_requires_disambiguation_for_unlinked_collision() -> None:
         assert delete_worktree_only.returncode == 0
         assert "deleted tracked worktree: ws" in delete_worktree_only.stdout
         assert not worktree_path.exists()
+
+
+@pytest.mark.integration
+def test_cli_list_shows_orphan_when_workspace_worktree_pair_is_inconsistent() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "test@example.com")
+        _git(repo, "config", "user.name", "Test User")
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "base")
+
+        _git(repo, "checkout", "-b", "feature-a")
+        (repo / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "a")
+
+        _git(repo, "checkout", "main")
+        _git(repo, "checkout", "-b", "feature-b")
+        (repo / "b.txt").write_text("b\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "b")
+        _git(repo, "checkout", "main")
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        create_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "worktree",
+                "feature-a",
+                "feature-b",
+                "--name",
+                "ws",
+                "--print-path",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert create_result.returncode == 0
+        worktree_path = Path(create_result.stdout.strip())
+        assert worktree_path.exists()
+
+        git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
+        tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
+        workspace_metadata = (
+            tracked_dir / f"{hashlib.sha256('ws'.encode()).hexdigest()}.json"
+        )
+
+        payload = json.loads(workspace_metadata.read_text(encoding="utf-8"))
+        payload["workspace_name"] = "other"
+        workspace_metadata.write_text(json.dumps(payload), encoding="utf-8")
+
+        list_result = subprocess.run(
+            [sys.executable, "-m", "git_cuttle", "list"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+        assert list_result.returncode == 0
+        assert "ws [workspace]: parents=feature-a, feature-b\n" in list_result.stdout
+        assert (
+            f"ws [workspace]: parents=feature-a, feature-b path={worktree_path}"
+            not in list_result.stdout
+        )
+        assert (
+            "ws [orphan-workspace-worktree]: " f"workspace=other path={worktree_path}"
+        ) in list_result.stdout
