@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P0] Story: Ship CLI subcommand architecture for `new`, `list`, `delete`, `prune`,
+- [x] [P0] Story: Ship CLI subcommand architecture for `new`, `list`, `delete`, `prune`,
   `update`, and `absorb`.
   Include argparse subparser wiring, shared flag conventions, command dispatch
   through orchestrator, and black-box CLI tests for help text, argument

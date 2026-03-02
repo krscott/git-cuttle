@@ -1,9 +1,5 @@
-"""Black-box integration tests for the CLI using subprocess.
+"""Black-box integration tests for CLI subcommand architecture."""
 
-These tests invoke the CLI as a real process to verify the end-to-end user experience.
-"""
-
-import os
 import pathlib
 import subprocess
 
@@ -24,119 +20,106 @@ def _init_repo(path: pathlib.Path) -> None:
 
 
 @pytest.mark.integration
-def test_cli_basic_argument() -> None:
-    """Test CLI with a basic name argument."""
-    result = subprocess.run(
-        ["gitcuttle", "Alice"],
-        capture_output=True,
-        text=True,
-    )
+def test_cli_help_lists_subcommands() -> None:
+    result = subprocess.run(["gitcuttle", "--help"], capture_output=True, text=True)
+
     assert result.returncode == 0
-    assert "Hello, Alice!" in result.stdout
+    assert "new" in result.stdout
+    assert "list" in result.stdout
+    assert "delete" in result.stdout
+    assert "prune" in result.stdout
+    assert "update" in result.stdout
+    assert "absorb" in result.stdout
 
 
 @pytest.mark.integration
-def test_cli_default_name() -> None:
-    """Test CLI with no arguments uses default name."""
+def test_cli_invalid_arguments_show_actionable_guidance() -> None:
     result = subprocess.run(
-        ["gitcuttle"],
+        ["gitcuttle", "delete"],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0
-    assert "Hello, World!" in result.stdout
+
+    assert result.returncode == 2
+    assert "error[invalid-arguments]: invalid command arguments" in result.stderr
+    assert "the following arguments are required: branch" in result.stderr
+    assert "hint: run `gitcuttle --help` to view valid usage" in result.stderr
 
 
 @pytest.mark.integration
-def test_cli_destination_outputs_path_only() -> None:
-    result = subprocess.run(
-        ["gitcuttle", "--destination"],
+def test_cli_new_and_destination_invocation_paths(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    invoked = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/demo"],
         capture_output=True,
         text=True,
+        cwd=repo,
+    )
+    destination = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/demo", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
     )
 
-    assert result.returncode == 0
-    assert result.stdout.strip() == str(pathlib.Path.cwd().resolve())
-    assert result.stderr == ""
+    assert invoked.returncode == 0
+    assert invoked.stdout == "new:invoked\n"
+    assert destination.returncode == 0
+    assert destination.stdout == "new:destination\n"
 
 
 @pytest.mark.integration
-def test_cli_destination_short_flag_outputs_path_only() -> None:
-    result = subprocess.run(
-        ["gitcuttle", "-d"],
-        capture_output=True,
-        text=True,
-    )
+def test_cli_per_command_invocation_paths(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
 
-    assert result.returncode == 0
-    assert result.stdout.strip() == str(pathlib.Path.cwd().resolve())
-    assert result.stderr == ""
+    command_expectations = [
+        (["list"], "list:invoked\n"),
+        (["delete", "feature/demo", "--dry-run"], "delete:planned\n"),
+        (["prune", "--dry-run"], "prune:planned\n"),
+        (["update"], "update:invoked\n"),
+        (["absorb"], "absorb:invoked\n"),
+    ]
 
-
-@pytest.mark.integration
-def test_cli_verbose_flag() -> None:
-    """Test CLI with --verbose flag shows debug output."""
-    result = subprocess.run(
-        ["gitcuttle", "--verbose", "Bob"],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert "Hello, Bob!" in result.stdout
-    assert "Greeting user..." in result.stderr
+    for args, expected in command_expectations:
+        result = subprocess.run(["gitcuttle", *args], capture_output=True, text=True, cwd=repo)
+        assert result.returncode == 0
+        assert result.stdout == expected
 
 
 @pytest.mark.integration
-def test_cli_verbose_short_flag() -> None:
-    """Test CLI with -v short flag shows debug output."""
-    result = subprocess.run(
-        ["gitcuttle", "-v", "Charlie"],
+def test_cli_json_invocation_paths(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    delete_result = subprocess.run(
+        ["gitcuttle", "delete", "feature/demo", "--dry-run", "--json"],
         capture_output=True,
         text=True,
+        cwd=repo,
     )
-    assert result.returncode == 0
-    assert "Hello, Charlie!" in result.stdout
-    assert "Greeting user..." in result.stderr
-
-
-@pytest.mark.integration
-def test_cli_verbose_env_var() -> None:
-    """Test CLI with GITCUTTLE_VERBOSE environment variable."""
-    env = os.environ.copy()
-    env["GITCUTTLE_VERBOSE"] = "1"
-    result = subprocess.run(
-        ["gitcuttle", "David"],
+    prune_result = subprocess.run(
+        ["gitcuttle", "prune", "--dry-run", "--json"],
         capture_output=True,
         text=True,
-        env=env,
+        cwd=repo,
     )
-    assert result.returncode == 0
-    assert "Hello, David!" in result.stdout
-    assert "Greeting user..." in result.stderr
 
-
-@pytest.mark.integration
-def test_cli_flag_overrides_env_var() -> None:
-    """Test that command line flag works even when env var is not set."""
-    env = os.environ.copy()
-    # Ensure the env var is not set
-    env.pop("GITCUTTLE_VERBOSE", None)
-    result = subprocess.run(
-        ["gitcuttle", "--verbose", "Eve"],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert result.returncode == 0
-    assert "Hello, Eve!" in result.stdout
-    assert "Greeting user..." in result.stderr
+    assert delete_result.returncode == 0
+    assert delete_result.stdout.strip() == '{"command":"delete","status":"planned"}'
+    assert prune_result.returncode == 0
+    assert prune_result.stdout.strip() == '{"command":"prune","status":"planned"}'
 
 
 @pytest.mark.integration
 def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
-    """Test CLI fails with guidance when run outside a git repository."""
     result = subprocess.run(
-        ["gitcuttle", "Frank"],
+        ["gitcuttle", "list"],
         capture_output=True,
         text=True,
         cwd=tmp_path,
@@ -144,38 +127,6 @@ def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
     assert result.returncode != 0
     assert "error[not-in-git-repo]: gitcuttle must be run from within a git repository" in result.stderr
     assert "hint: change to your repository root or one of its worktrees and retry" in result.stderr
-
-
-@pytest.mark.integration
-def test_cli_behaves_same_from_repo_root_and_worktree(tmp_path: pathlib.Path) -> None:
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    _init_repo(repo_root)
-
-    worktree_dir = tmp_path / "repo-feature"
-    subprocess.run(
-        ["git", "worktree", "add", "-b", "feature", str(worktree_dir)],
-        check=True,
-        cwd=repo_root,
-    )
-
-    root_result = subprocess.run(
-        ["gitcuttle", "Grace"],
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-    )
-    worktree_result = subprocess.run(
-        ["gitcuttle", "Grace"],
-        capture_output=True,
-        text=True,
-        cwd=worktree_dir,
-    )
-
-    assert root_result.returncode == 0
-    assert worktree_result.returncode == 0
-    assert root_result.stdout == worktree_result.stdout
-    assert "Hello, Grace!" in root_result.stdout
 
 
 @pytest.mark.integration
@@ -197,7 +148,7 @@ def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) ->
     (git_dir / "MERGE_HEAD").write_text("abc123\n")
 
     result = subprocess.run(
-        ["gitcuttle", "Grace"],
+        ["gitcuttle", "list"],
         capture_output=True,
         text=True,
         cwd=repo,
@@ -210,17 +161,3 @@ def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) ->
     )
     assert "details: detected state marker: MERGE_HEAD" in result.stderr
     assert "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
-
-
-@pytest.mark.integration
-def test_cli_invalid_arguments_show_actionable_guidance() -> None:
-    result = subprocess.run(
-        ["gitcuttle", "--not-a-real-flag"],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 2
-    assert "error[invalid-arguments]: invalid command arguments" in result.stderr
-    assert "details: unrecognized arguments: --not-a-real-flag" in result.stderr
-    assert "hint: run `gitcuttle --help` to view valid usage" in result.stderr

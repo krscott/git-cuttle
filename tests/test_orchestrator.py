@@ -37,7 +37,7 @@ def test_command_requires_auto_tracking_for_mutating_commands() -> None:
 
 def test_command_requires_auto_tracking_ignores_non_mutating_commands() -> None:
     assert not command_requires_auto_tracking("list")
-    assert not command_requires_auto_tracking("greet")
+    assert not command_requires_auto_tracking("unknown")
 
 
 def test_run_tracks_repo_for_mutating_command(tmp_path: pathlib.Path) -> None:
@@ -46,7 +46,7 @@ def test_run_tracks_repo_for_mutating_command(tmp_path: pathlib.Path) -> None:
     _init_repo(repo)
     tracker = StubTracker()
 
-    run(Options(name="Test"), cwd=repo, metadata_manager=tracker, command_name="new")
+    run(Options(), cwd=repo, metadata_manager=tracker, command_name="new")
 
     assert tracker.calls == [repo]
 
@@ -57,7 +57,7 @@ def test_run_skips_tracking_for_non_mutating_command(tmp_path: pathlib.Path) -> 
     _init_repo(repo)
     tracker = StubTracker()
 
-    run(Options(name="Test"), cwd=repo, metadata_manager=tracker, command_name="list")
+    run(Options(), cwd=repo, metadata_manager=tracker, command_name="list")
 
     assert tracker.calls == []
 
@@ -71,7 +71,7 @@ def test_non_mutating_command_never_creates_tracking_entries(
     metadata_path = tmp_path / "workspaces.json"
     manager = MetadataManager(path=metadata_path)
 
-    run(Options(name="Test"), cwd=repo, metadata_manager=manager, command_name="list")
-    run(Options(name="Test"), cwd=repo, metadata_manager=manager, command_name="list")
+    run(Options(), cwd=repo, metadata_manager=manager, command_name="list")
+    run(Options(), cwd=repo, metadata_manager=manager, command_name="list")
 
     assert not metadata_path.exists()

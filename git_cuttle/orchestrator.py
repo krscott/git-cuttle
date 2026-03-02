@@ -3,7 +3,7 @@ from typing import Protocol
 
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import in_git_repo, in_progress_operation
-from git_cuttle.lib import Options, greet
+from git_cuttle.lib import Options
 from git_cuttle.metadata_manager import MetadataManager
 
 
@@ -23,7 +23,7 @@ def run(
     *,
     cwd: Path | None = None,
     metadata_manager: RepoTracker | None = None,
-    command_name: str = "greet",
+    command_name: str = "list",
 ) -> None:
     effective_cwd = cwd or Path.cwd()
     if not in_git_repo(effective_cwd):
@@ -51,8 +51,76 @@ def run(
     if command_requires_auto_tracking(command_name):
         tracker.ensure_repo_tracked(cwd=effective_cwd)
 
-    if opts.destination:
-        print(effective_cwd.resolve())
+    _dispatch_command(command_name=command_name, opts=opts)
+
+
+def _dispatch_command(*, command_name: str, opts: Options) -> None:
+    if command_name == "new":
+        _run_new(opts=opts)
+        return
+    if command_name == "list":
+        _run_list(opts=opts)
+        return
+    if command_name == "delete":
+        _run_delete(opts=opts)
+        return
+    if command_name == "prune":
+        _run_prune(opts=opts)
+        return
+    if command_name == "update":
+        _run_update(opts=opts)
+        return
+    if command_name == "absorb":
+        _run_absorb(opts=opts)
         return
 
-    greet(opts)
+    raise AppError(
+        code="unknown-command",
+        message="unknown command requested",
+        details=command_name,
+        guidance=("run `gitcuttle --help` to view available commands",),
+    )
+
+
+def _run_new(*, opts: Options) -> None:
+    if opts.destination:
+        print("new:destination")
+        return
+    print("new:invoked")
+
+
+def _run_list(*, opts: Options) -> None:
+    if opts.json_output:
+        print('{"command":"list","status":"invoked"}')
+        return
+    print("list:invoked")
+
+
+def _run_delete(*, opts: Options) -> None:
+    if opts.dry_run:
+        if opts.json_output:
+            print('{"command":"delete","status":"planned"}')
+            return
+        print("delete:planned")
+        return
+    print("delete:invoked")
+
+
+def _run_prune(*, opts: Options) -> None:
+    if opts.dry_run:
+        if opts.json_output:
+            print('{"command":"prune","status":"planned"}')
+            return
+        print("prune:planned")
+        return
+    print("prune:invoked")
+
+
+def _run_update(*, opts: Options) -> None:
+    _ = opts
+    print("update:invoked")
+
+
+def _run_absorb(*, opts: Options) -> None:
+    _ = opts
+    print("absorb:invoked")

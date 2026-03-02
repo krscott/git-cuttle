@@ -1,9 +1,10 @@
-import pytest
-
-from git_cuttle.lib import Options, greet
+from git_cuttle.lib import Options
 
 
-def test_greet(capsys: pytest.CaptureFixture[str]) -> None:
-    greet(Options(name="World"))
-    captured = capsys.readouterr()
-    assert "Hello, World!" in captured.out
+def test_options_defaults() -> None:
+    opts = Options()
+
+    assert opts.branch is None
+    assert opts.base_ref is None
+    assert opts.parent_refs == ()
+    assert not opts.destination

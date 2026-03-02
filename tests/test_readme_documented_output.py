@@ -20,45 +20,45 @@ def _init_repo(path: pathlib.Path) -> None:
 
 
 @pytest.mark.integration
-def test_readme_basic_greeting_output(tmp_path: pathlib.Path) -> None:
+def test_readme_new_command_invocation_output(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
 
     result = subprocess.run(
-        ["gitcuttle", "Alice"],
+        ["gitcuttle", "new", "-b", "feature/readme"],
         capture_output=True,
         text=True,
         cwd=repo,
     )
 
     assert result.returncode == 0
-    assert result.stdout == "Hello, Alice!\n"
+    assert result.stdout == "new:invoked\n"
     assert result.stderr == ""
 
 
 @pytest.mark.integration
-def test_readme_destination_output_is_absolute_path(tmp_path: pathlib.Path) -> None:
+def test_readme_destination_output_for_new(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
 
     result = subprocess.run(
-        ["gitcuttle", "--destination"],
+        ["gitcuttle", "new", "-b", "feature/readme", "--destination"],
         capture_output=True,
         text=True,
         cwd=repo,
     )
 
     assert result.returncode == 0
-    assert result.stdout.strip() == str(repo.resolve())
+    assert result.stdout.strip() == "new:destination"
     assert result.stderr == ""
 
 
 @pytest.mark.integration
 def test_readme_outside_repo_error_snippet(tmp_path: pathlib.Path) -> None:
     result = subprocess.run(
-        ["gitcuttle", "Alice"],
+        ["gitcuttle", "list"],
         capture_output=True,
         text=True,
         cwd=tmp_path,
@@ -93,7 +93,7 @@ def test_readme_in_progress_error_snippet(tmp_path: pathlib.Path) -> None:
     (git_dir / "MERGE_HEAD").write_text("abc123\n")
 
     result = subprocess.run(
-        ["gitcuttle", "Alice"],
+        ["gitcuttle", "list"],
         capture_output=True,
         text=True,
         cwd=repo,

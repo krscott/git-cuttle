@@ -1,56 +1,55 @@
 # git-cuttle
 
-`git-cuttle` currently ships a minimal CLI surface that runs inside an existing
-git repository.
+`git-cuttle` currently ships a subcommand-oriented CLI that runs inside an
+existing git repository.
 
 ## Command behavior
 
-- `gitcuttle [name]` prints `Hello, <name>!` (default name: `World`).
-- `gitcuttle --destination` (or `-d`) prints the absolute path of the current
-  working directory and exits.
+- `gitcuttle new -b <branch> [base ...]` creates a new workspace invocation path.
+- `gitcuttle list`, `gitcuttle delete`, `gitcuttle prune`, `gitcuttle update`,
+  and `gitcuttle absorb` are available subcommands.
 - `gitcuttle --verbose` (or `-v`, or `GITCUTTLE_VERBOSE=1`) enables debug logs.
 
 ## Quick examples
 
-Basic greeting:
+Create a workspace command invocation:
 
 ```bash
-gitcuttle Alice
+gitcuttle new -b feature/demo
 ```
 
 ```text
-Hello, Alice!
-```
-
-Default greeting:
-
-```bash
-gitcuttle
-```
-
-```text
-Hello, World!
+new:invoked
 ```
 
 Path-only output for shell navigation helpers:
 
 ```bash
-gitcuttle --destination
+gitcuttle new -b feature/demo --destination
 ```
 
 ```text
-/absolute/path/to/current/directory
+new:destination
 ```
 
-Verbose logging:
+List invocation:
 
 ```bash
-gitcuttle --verbose Bob
+gitcuttle list
 ```
 
 ```text
-Hello, Bob!
-# stderr also includes: Greeting user...
+list:invoked
+```
+
+Dry-run delete plan:
+
+```bash
+gitcuttle delete feature/demo --dry-run
+```
+
+```text
+delete:planned
 ```
 
 ## Blocked states and troubleshooting

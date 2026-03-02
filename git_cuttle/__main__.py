@@ -23,7 +23,7 @@ def main() -> None:
             format="%(message)s",
         )
 
-        run(cli_opts.app_opts)
+        run(cli_opts.app_opts, command_name=cli_opts.command_name)
     except AppError as error:
         print(
             format_user_error(error),

@@ -30,14 +30,12 @@ def add_destination_flag(parser: argparse.ArgumentParser) -> None:
 @dataclass(kw_only=True, frozen=True)
 class CliOpts:
     app_opts: Options
+    command_name: str
     verbose: bool
 
     @staticmethod
     def parse_args() -> "CliOpts":
         parser = ErrorHandlingArgumentParser()
-
-        parser.add_argument("name", nargs="?", default="World", help="Your name")
-        add_destination_flag(parser)
         parser.add_argument(
             "-v",
             "--verbose",
@@ -47,10 +45,86 @@ class CliOpts:
             help="show more detailed log messages",
         )
 
+        subparsers = parser.add_subparsers(dest="command", required=True)
+
+        new_parser = subparsers.add_parser("new", help="create a new workspace")
+        new_parser.add_argument(
+            "-b",
+            "--branch",
+            required=True,
+            help="new branch name to create",
+        )
+        new_parser.add_argument(
+            "bases",
+            nargs="*",
+            help="base ref(s): one for standard, two or more for octopus",
+        )
+        add_destination_flag(new_parser)
+
+        list_parser = subparsers.add_parser("list", help="list tracked workspaces")
+        list_parser.add_argument(
+            "--json",
+            dest="json_output",
+            action="store_true",
+            help="render output as json",
+        )
+
+        delete_parser = subparsers.add_parser("delete", help="delete a tracked workspace")
+        delete_parser.add_argument("branch", help="workspace branch to delete")
+        delete_parser.add_argument("--dry-run", action="store_true", help="print plan without mutating")
+        delete_parser.add_argument(
+            "--json",
+            dest="json_output",
+            action="store_true",
+            help="render output as json",
+        )
+        delete_parser.add_argument("--force", action="store_true", help="bypass safety checks")
+
+        prune_parser = subparsers.add_parser("prune", help="prune stale tracked workspaces")
+        prune_parser.add_argument("--dry-run", action="store_true", help="print plan without mutating")
+        prune_parser.add_argument(
+            "--json",
+            dest="json_output",
+            action="store_true",
+            help="render output as json",
+        )
+        prune_parser.add_argument("--force", action="store_true", help="bypass safety checks")
+
+        subparsers.add_parser("update", help="update current workspace")
+
+        absorb_parser = subparsers.add_parser("absorb", help="absorb octopus commits into parent branches")
+        absorb_parser.add_argument("target_parent", nargs="?", default=None, help="target parent branch")
+        absorb_parser.add_argument(
+            "-i",
+            "--interactive",
+            action="store_true",
+            help="choose a target parent for each commit",
+        )
+
         args = parser.parse_args()
 
+        base_ref: str | None = None
+        parent_refs: tuple[str, ...] = ()
+        if args.command == "new":
+            bases: list[str] = args.bases
+            if len(bases) == 1:
+                base_ref = bases[0]
+            elif len(bases) >= 2:
+                parent_refs = tuple(bases)
+
         return CliOpts(
-            app_opts=Options(name=args.name, destination=args.destination),
+            app_opts=Options(
+                branch=getattr(args, "branch", None),
+                base_ref=base_ref,
+                parent_refs=parent_refs,
+                destination=getattr(args, "destination", False),
+                dry_run=getattr(args, "dry_run", False),
+                json_output=getattr(args, "json_output", False),
+                force=getattr(args, "force", False),
+                interactive=getattr(args, "interactive", False),
+                target_parent=getattr(args, "target_parent", None),
+            ),
+            command_name=args.command,
             verbose=args.verbose is not None,
         )
 
