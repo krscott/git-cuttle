@@ -1,0 +1,719 @@
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+from git_cuttle.errors import AppError
+from git_cuttle.git_ops import (
+    backup_ref_for_branch,
+    create_backup_refs_for_branches,
+    remove_backup_refs,
+)
+from git_cuttle.metadata_manager import WorkspaceMetadata
+from git_cuttle.transaction import (
+    Transaction,
+    TransactionExecutionError,
+    TransactionStep,
+)
+
+CommitTargetChooser = Callable[[str, tuple[str, ...]], str]
+
+
+@dataclass(kw_only=True, frozen=True)
+class AbsorbedCommit:
+    commit: str
+    target_parent: str
+
+
+@dataclass(kw_only=True, frozen=True)
+class AbsorbResult:
+    branch: str
+    before_oid: str
+    after_oid: str
+    absorbed_commits: tuple[AbsorbedCommit, ...]
+
+    @property
+    def changed(self) -> bool:
+        return self.before_oid != self.after_oid
+
+
+def absorb_octopus_workspace(
+    *,
+    repo_root: Path,
+    workspace: WorkspaceMetadata,
+    target_parent: str | None = None,
+    interactive: bool = False,
+    choose_target: CommitTargetChooser | None = None,
+) -> AbsorbResult:
+    if workspace.kind != "octopus":
+        raise AppError(
+            code="invalid-workspace-kind",
+            message="absorb requires octopus workspace metadata",
+            details=workspace.branch,
+        )
+    if len(workspace.octopus_parents) < 2:
+        raise AppError(
+            code="invalid-octopus-parents",
+            message="octopus workspace must track at least two parent refs",
+            details=workspace.branch,
+        )
+
+    if target_parent is not None and target_parent not in workspace.octopus_parents:
+        raise AppError(
+            code="invalid-absorb-target",
+            message="target parent is not part of the octopus workspace",
+            details=target_parent,
+            guidance=("choose one of the configured octopus parent branches",),
+        )
+
+    if interactive and choose_target is None:
+        raise AppError(
+            code="interactive-selection-unavailable",
+            message="interactive absorb requires a commit target selector",
+            guidance=(
+                "pass a commit selection callback or run absorb with an explicit target parent",
+            ),
+        )
+
+    before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
+    unique_commits = _octopus_unique_commits(
+        repo_root=repo_root,
+        branch=workspace.branch,
+        parent_refs=workspace.octopus_parents,
+    )
+    merge_commit, post_merge_commits = _split_octopus_history(
+        repo_root=repo_root,
+        unique_commits=unique_commits,
+    )
+
+    if not post_merge_commits:
+        return AbsorbResult(
+            branch=workspace.branch,
+            before_oid=before_oid,
+            after_oid=before_oid,
+            absorbed_commits=(),
+        )
+
+    planned = _plan_absorb_targets(
+        repo_root=repo_root,
+        commits=post_merge_commits,
+        parents=workspace.octopus_parents,
+        explicit_target=target_parent,
+        interactive=interactive,
+        chooser=choose_target,
+    )
+
+    original_branch = _current_branch(repo_root=repo_root)
+    touched_branches = tuple(
+        dict.fromkeys((*workspace.octopus_parents, workspace.branch))
+    )
+    transaction = Transaction()
+
+    transaction.add_step(
+        _backup_refs_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            branches=touched_branches,
+        )
+    )
+
+    if target_parent is not None:
+        if merge_commit is None:
+            raise AppError(
+                code="invalid-octopus-history",
+                message="octopus workspace history is missing a merge base commit",
+                details=workspace.branch,
+                guidance=(
+                    "rebuild the octopus workspace with `gitcuttle update` and retry absorb",
+                ),
+            )
+
+        transaction.add_step(
+            _rebase_onto_target_step(
+                repo_root=repo_root,
+                transaction=transaction,
+                workspace_branch=workspace.branch,
+                merge_commit=merge_commit,
+                target_parent=target_parent,
+            )
+        )
+        transaction.add_step(
+            _fast_forward_target_step(
+                repo_root=repo_root,
+                transaction=transaction,
+                target_parent=target_parent,
+                source_branch=workspace.branch,
+            )
+        )
+    else:
+        for item in planned:
+            transaction.add_step(
+                _cherry_pick_to_parent_step(
+                    repo_root=repo_root,
+                    transaction=transaction,
+                    commit=item.commit,
+                    target_parent=item.target_parent,
+                )
+            )
+
+    transaction.add_step(
+        _rebuild_octopus_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            workspace=workspace,
+        )
+    )
+    transaction.add_step(
+        _cleanup_backup_refs_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            branches=touched_branches,
+        )
+    )
+
+    try:
+        try:
+            transaction.run()
+        except TransactionExecutionError as error:
+            if isinstance(error.cause, AppError):
+                raise error.cause
+            raise AppError(
+                code="absorb-failed",
+                message="absorb operation failed",
+                details=str(error.cause),
+            ) from error
+    finally:
+        current_branch = _current_branch(repo_root=repo_root)
+        if (
+            original_branch is not None
+            and current_branch is not None
+            and original_branch != current_branch
+        ):
+            try:
+                _checkout_branch(repo_root=repo_root, branch=original_branch)
+            except AppError:
+                pass
+
+    after_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
+    return AbsorbResult(
+        branch=workspace.branch,
+        before_oid=before_oid,
+        after_oid=after_oid,
+        absorbed_commits=tuple(planned),
+    )
+
+
+def _rebase_post_merge_commits_onto_parent(
+    *,
+    repo_root: Path,
+    branch: str,
+    merge_commit: str,
+    target_parent: str,
+) -> None:
+    _checkout_branch(repo_root=repo_root, branch=branch)
+    _git(
+        repo_root=repo_root,
+        args=["rebase", "--onto", target_parent, merge_commit, branch],
+        code="absorb-rebase-failed",
+        message="failed to rebase post-merge commits onto absorb target parent",
+    )
+    return None
+
+
+def _backup_refs_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    branches: tuple[str, ...],
+) -> TransactionStep:
+    unique_branches = tuple(dict.fromkeys(branches))
+    recovery_commands = tuple(
+        _restore_backup_command(txn_id=transaction.txn_id, branch=branch)
+        for branch in unique_branches
+    )
+    return TransactionStep(
+        name="backup-refs",
+        apply=lambda: _create_backup_refs(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branches=unique_branches,
+        ),
+        rollback=lambda: remove_backup_refs(txn_id=transaction.txn_id, cwd=repo_root),
+        recovery_commands=recovery_commands,
+    )
+
+
+def _rebase_onto_target_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    workspace_branch: str,
+    merge_commit: str,
+    target_parent: str,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"rebase-workspace:{workspace_branch}",
+        apply=lambda: _rebase_post_merge_commits_onto_parent(
+            repo_root=repo_root,
+            branch=workspace_branch,
+            merge_commit=merge_commit,
+            target_parent=target_parent,
+        ),
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=workspace_branch,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=workspace_branch),
+        ),
+    )
+
+
+def _fast_forward_target_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    target_parent: str,
+    source_branch: str,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"update-parent:{target_parent}",
+        apply=lambda: _fast_forward_branch_from_branch(
+            repo_root=repo_root,
+            target_parent=target_parent,
+            source_branch=source_branch,
+        ),
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=target_parent,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=target_parent),
+        ),
+    )
+
+
+def _cherry_pick_to_parent_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    commit: str,
+    target_parent: str,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"cherry-pick:{commit[:12]}->{target_parent}",
+        apply=lambda: _cherry_pick_commit_to_parent(
+            repo_root=repo_root,
+            commit=commit,
+            target_parent=target_parent,
+        ),
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=target_parent,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=target_parent),
+        ),
+    )
+
+
+def _rebuild_octopus_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    workspace: WorkspaceMetadata,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"rebuild-octopus:{workspace.branch}",
+        apply=lambda: _rebuild_octopus_after_absorb(
+            repo_root=repo_root,
+            branch=workspace.branch,
+            parent_refs=workspace.octopus_parents,
+        ),
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=workspace.branch,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=workspace.branch),
+        ),
+    )
+
+
+def _cleanup_backup_refs_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    branches: tuple[str, ...],
+) -> TransactionStep:
+    unique_branches = tuple(dict.fromkeys(branches))
+    return TransactionStep(
+        name="cleanup-backup-refs",
+        apply=lambda: remove_backup_refs(txn_id=transaction.txn_id, cwd=repo_root),
+        rollback=lambda: None,
+        recovery_commands=tuple(
+            _delete_backup_ref_command(txn_id=transaction.txn_id, branch=branch)
+            for branch in unique_branches
+        ),
+    )
+
+
+def _create_backup_refs(
+    *,
+    repo_root: Path,
+    txn_id: str,
+    branches: tuple[str, ...],
+) -> None:
+    try:
+        _ = create_backup_refs_for_branches(
+            txn_id=txn_id,
+            branches=list(branches),
+            cwd=repo_root,
+        )
+    except RuntimeError as error:
+        raise AppError(
+            code="absorb-backup-failed",
+            message="failed to create transactional backup refs for absorb",
+            details=str(error),
+        ) from error
+
+
+def _cherry_pick_commit_to_parent(
+    *,
+    repo_root: Path,
+    commit: str,
+    target_parent: str,
+) -> None:
+    _checkout_branch(repo_root=repo_root, branch=target_parent)
+    _git(
+        repo_root=repo_root,
+        args=["cherry-pick", commit],
+        code="absorb-cherry-pick-failed",
+        message="failed to cherry-pick commit onto target parent",
+    )
+
+
+def _fast_forward_branch_from_branch(
+    *,
+    repo_root: Path,
+    target_parent: str,
+    source_branch: str,
+) -> None:
+    source_tip = _branch_head(repo_root=repo_root, branch=source_branch)
+    _checkout_branch(repo_root=repo_root, branch=target_parent)
+    _git(
+        repo_root=repo_root,
+        args=["merge", "--ff-only", source_tip],
+        code="absorb-target-update-failed",
+        message="failed to fast-forward absorb target parent",
+    )
+
+
+def _rebuild_octopus_after_absorb(
+    *,
+    repo_root: Path,
+    branch: str,
+    parent_refs: tuple[str, ...],
+) -> None:
+    _checkout_branch(repo_root=repo_root, branch=branch)
+    _git(
+        repo_root=repo_root,
+        args=["reset", "--hard", parent_refs[0]],
+        code="absorb-reset-failed",
+        message="failed to reset octopus branch before absorb merge rebuild",
+    )
+    _git(
+        repo_root=repo_root,
+        args=[
+            "merge",
+            "--no-ff",
+            "-m",
+            f"Rebuild octopus workspace {branch}",
+            *parent_refs[1:],
+        ],
+        code="absorb-merge-rebuild-failed",
+        message="failed to rebuild octopus merge commit after absorb",
+    )
+
+
+def _restore_branch_from_backup_ref(
+    *, repo_root: Path, txn_id: str, branch: str
+) -> None:
+    backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
+    backup_oid = _rev_parse(repo_root=repo_root, ref=backup_ref)
+    if backup_oid is None:
+        raise RuntimeError(f"backup ref does not exist: {backup_ref}")
+
+    _git(
+        repo_root=repo_root,
+        args=["reset", "--hard"],
+        code="absorb-rollback-failed",
+        message="failed to clear git state before restoring backup refs",
+    )
+    _checkout_branch(repo_root=repo_root, branch=branch)
+    _git(
+        repo_root=repo_root,
+        args=["reset", "--hard", backup_oid],
+        code="absorb-rollback-failed",
+        message="failed to restore branch from absorb backup ref",
+    )
+
+
+def _restore_backup_command(*, txn_id: str, branch: str) -> str:
+    backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
+    return f"git checkout {branch} && git reset --hard {backup_ref}"
+
+
+def _delete_backup_ref_command(*, txn_id: str, branch: str) -> str:
+    return f"git update-ref -d {backup_ref_for_branch(txn_id=txn_id, branch=branch)}"
+
+
+def _plan_absorb_targets(
+    *,
+    repo_root: Path,
+    commits: list[str],
+    parents: tuple[str, ...],
+    explicit_target: str | None,
+    interactive: bool,
+    chooser: CommitTargetChooser | None,
+) -> list[AbsorbedCommit]:
+    planned: list[AbsorbedCommit] = []
+    for commit in commits:
+        if explicit_target is not None:
+            target = explicit_target
+        elif interactive:
+            assert chooser is not None
+            target = chooser(commit, parents)
+        else:
+            target = _heuristic_target_parent(
+                repo_root=repo_root, commit=commit, parents=parents
+            )
+
+        if target not in parents:
+            raise AppError(
+                code="invalid-absorb-target",
+                message="selected absorb target is not an octopus parent",
+                details=f"{target} for commit {commit}",
+            )
+
+        planned.append(AbsorbedCommit(commit=commit, target_parent=target))
+
+    return planned
+
+
+def _heuristic_target_parent(
+    *, repo_root: Path, commit: str, parents: tuple[str, ...]
+) -> str:
+    changed_files = _commit_changed_files(repo_root=repo_root, commit=commit)
+    if not changed_files:
+        raise AppError(
+            code="absorb-target-uncertain",
+            message="cannot infer absorb target for empty or metadata-only commit",
+            details=commit,
+            guidance=("rerun with an explicit parent branch or interactive mode (-i)",),
+        )
+
+    scores: dict[str, int] = {}
+    for parent in parents:
+        matches = 0
+        for changed_file in changed_files:
+            if _path_exists_at_ref(repo_root=repo_root, ref=parent, path=changed_file):
+                matches += 1
+        scores[parent] = matches
+
+    best_parent, best_score = max(scores.items(), key=lambda item: item[1])
+    tied = sum(1 for score in scores.values() if score == best_score) > 1
+    confidence = best_score / len(changed_files)
+    if best_score == 0 or tied or confidence < 0.6:
+        score_details = ", ".join(
+            f"{parent}={score}" for parent, score in sorted(scores.items())
+        )
+        raise AppError(
+            code="absorb-target-uncertain",
+            message="could not infer a high-confidence absorb target",
+            details=f"{commit}: {score_details}",
+            guidance=("rerun with an explicit parent branch or interactive mode (-i)",),
+        )
+
+    return best_parent
+
+
+def _split_octopus_history(
+    *, repo_root: Path, unique_commits: list[str]
+) -> tuple[str | None, list[str]]:
+    if not unique_commits:
+        return None, []
+    first_commit = unique_commits[0]
+    if _is_merge_commit(repo_root=repo_root, commit=first_commit):
+        return first_commit, unique_commits[1:]
+    return None, unique_commits
+
+
+def _commit_changed_files(*, repo_root: Path, commit: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "show", "--pretty=", "--name-only", commit],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or commit
+        raise AppError(
+            code="absorb-analysis-failed",
+            message="failed to inspect changed files for absorb",
+            details=details,
+        )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _path_exists_at_ref(*, repo_root: Path, ref: str, path: str) -> bool:
+    result = subprocess.run(
+        ["git", "cat-file", "-e", f"{ref}:{path}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    return result.returncode == 0
+
+
+def _octopus_unique_commits(
+    *, repo_root: Path, branch: str, parent_refs: tuple[str, ...]
+) -> list[str]:
+    result = subprocess.run(
+        ["git", "rev-list", "--reverse", branch, "--not", *parent_refs],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or branch
+        raise AppError(
+            code="octopus-update-analysis-failed",
+            message="failed to analyze octopus branch history",
+            details=details,
+        )
+
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _is_merge_commit(*, repo_root: Path, commit: str) -> bool:
+    parent_line = _git_stdout(
+        repo_root=repo_root, args=["show", "-s", "--format=%P", commit]
+    )
+    parent_oids = [parent for parent in parent_line.split() if parent]
+    return len(parent_oids) > 1
+
+
+def _branch_head(*, repo_root: Path, branch: str) -> str:
+    branch_oid = _rev_parse(repo_root=repo_root, ref=f"refs/heads/{branch}")
+    if branch_oid is None:
+        raise AppError(
+            code="branch-missing",
+            message="workspace branch does not exist locally",
+            details=branch,
+            guidance=("fetch or recreate the local branch before running absorb",),
+        )
+    return branch_oid
+
+
+def _rev_parse(*, repo_root: Path, ref: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", ref],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _current_branch(*, repo_root: Path) -> str | None:
+    branch = _git_stdout(
+        repo_root=repo_root,
+        args=["rev-parse", "--abbrev-ref", "HEAD"],
+        code="git-state-read-failed",
+        message="failed to resolve current branch",
+    )
+    if branch == "" or branch == "HEAD":
+        return None
+    return branch
+
+
+def _checkout_branch(*, repo_root: Path, branch: str) -> None:
+    _git(
+        repo_root=repo_root,
+        args=["checkout", branch],
+        code="branch-checkout-failed",
+        message="failed to checkout branch",
+    )
+
+
+def _git(*, repo_root: Path, args: list[str], code: str, message: str) -> None:
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or " ".join(args)
+        raise AppError(
+            code=code,
+            message=message,
+            details=details,
+            guidance=_git_failure_guidance(args=args),
+        )
+
+
+def _git_failure_guidance(*, args: list[str]) -> tuple[str, ...]:
+    if not args:
+        return ()
+
+    command = args[0]
+    if command == "rebase":
+        return (
+            "resolve conflicts, then run `git rebase --continue`",
+            "or run `git rebase --abort` to restore a clean git state before retrying",
+        )
+    if command == "merge":
+        return (
+            "resolve conflicts and commit the merge, or run `git merge --abort`",
+            "rerun the absorb flow once git status is clean",
+        )
+    if command == "cherry-pick":
+        return (
+            "resolve conflicts, then run `git cherry-pick --continue`",
+            "or run `git cherry-pick --abort` to restore a clean git state before retrying",
+        )
+
+    return ()
+
+
+def _git_stdout(
+    *,
+    repo_root: Path,
+    args: list[str],
+    code: str = "git-command-failed",
+    message: str = "git command failed",
+) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or " ".join(args)
+        raise AppError(code=code, message=message, details=details)
+    return result.stdout.strip()

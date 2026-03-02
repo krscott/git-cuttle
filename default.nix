@@ -1,5 +1,6 @@
 {
   buildPythonPackage,
+  git,
   lib,
   pytestCheckHook,
   python-dotenv,
@@ -19,6 +20,7 @@ buildPythonPackage {
   ];
 
   nativeCheckInputs = [
+    git
     pytestCheckHook
   ];
 

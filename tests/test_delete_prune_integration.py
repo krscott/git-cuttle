@@ -1,0 +1,897 @@
+import subprocess
+from pathlib import Path
+
+import pytest
+
+import git_cuttle.workspace_transaction as workspace_transaction
+from git_cuttle.delete import current_branch, delete_block_reason, delete_workspace
+from git_cuttle.errors import AppError
+from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
+from git_cuttle.new import create_standard_workspace
+from git_cuttle.prune import prune_candidate_for_branch, prune_reason, prune_workspaces
+
+
+def _git(
+    *, cwd: Path, args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        check=check,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
+def _init_repo(path: Path) -> None:
+    _git(cwd=path, args=["init", "-b", "main"])
+    _git(cwd=path, args=["config", "user.name", "Test User"])
+    _git(cwd=path, args=["config", "user.email", "test@example.com"])
+    (path / "README.md").write_text("hello\n")
+    _git(cwd=path, args=["add", "README.md"])
+    _git(cwd=path, args=["commit", "-m", "init"])
+
+
+def _txn_backup_refs(*, repo: Path) -> list[str]:
+    result = _git(
+        cwd=repo,
+        args=["for-each-ref", "--format=%(refname)", "refs/gitcuttle/txn"],
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+@pytest.mark.integration
+def test_delete_blocks_current_workspace_without_force(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _git(cwd=repo, args=["checkout", "-b", "feature/current"])
+
+    active_branch = current_branch(cwd=repo)
+
+    assert active_branch == "feature/current"
+    assert (
+        delete_block_reason(
+            current=active_branch, target="feature/current", force=False
+        )
+        == "current-workspace"
+    )
+    assert (
+        delete_block_reason(current=active_branch, target="feature/current", force=True)
+        == "current-workspace"
+    )
+
+
+@pytest.mark.integration
+def test_prune_marks_missing_local_branch_as_candidate(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _git(cwd=repo, args=["checkout", "-b", "feature/gone"])
+    _git(cwd=repo, args=["checkout", "main"])
+    _git(cwd=repo, args=["branch", "-D", "feature/gone"])
+
+    candidate = prune_candidate_for_branch(
+        repo_root=repo,
+        branch="feature/gone",
+        pr_status="unknown",
+    )
+
+    assert not candidate.local_branch_exists
+    assert prune_reason(candidate) == "missing-local-branch"
+
+
+@pytest.mark.integration
+def test_prune_missing_local_branch_removes_worktree_directory_and_metadata(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-missing-local",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    _git(cwd=destination, args=["checkout", "--detach"])
+    _git(cwd=repo, args=["branch", "-D", "feature/prune-missing-local"])
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-missing-local": "unknown"},
+    )
+
+    assert not destination.exists()
+    assert (
+        "feature/prune-missing-local"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_prune_does_not_remove_branch_for_unknown_pr_state(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _git(cwd=repo, args=["checkout", "-b", "feature/unknown-pr"])
+
+    candidate = prune_candidate_for_branch(
+        repo_root=repo,
+        branch="feature/unknown-pr",
+        pr_status="unknown",
+    )
+
+    assert candidate.local_branch_exists
+    assert prune_reason(candidate) is None
+
+
+@pytest.mark.integration
+def test_delete_requires_tracked_workspace(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/missing",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-not-tracked"
+    assert any("git branch -D <branch>" in hint for hint in exc_info.value.guidance)
+
+
+@pytest.mark.integration
+def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-dry-run",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/delete-dry-run"])
+
+    rendered = delete_workspace(
+        cwd=repo,
+        branch="feature/delete-dry-run",
+        metadata_manager=manager,
+        dry_run=True,
+        json_output=True,
+    )
+
+    assert rendered is not None
+    assert '"command": "delete"' in rendered
+    assert '"dry_run": true' in rendered
+    assert '"target": "feature/delete-dry-run"' in rendered
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-dry-run"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert (
+        "feature/delete-dry-run" in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_delete_blocks_dirty_workspace_without_force(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-dirty",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-dirty",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-dirty"
+
+
+@pytest.mark.integration
+def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-force",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    delete_workspace(
+        cwd=repo,
+        branch="feature/delete-force",
+        metadata_manager=manager,
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-force"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/delete-force"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_delete_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-rollback",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_write = manager.write
+    did_fail = False
+
+    def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
+        nonlocal did_fail
+        if not did_fail and all(
+            "feature/delete-rollback" not in repo_meta.workspaces
+            for repo_meta in metadata.repos.values()
+        ):
+            did_fail = True
+            raise RuntimeError("simulated metadata write failure")
+        original_write(metadata)
+
+    monkeypatch.setattr(manager, "write", fail_once_when_untracking)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-rollback",
+            metadata_manager=manager,
+            force=True,
+        )
+
+    assert exc_info.value.code == "delete-workspace-failed"
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-rollback"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []
+
+
+@pytest.mark.integration
+def test_delete_cleanup_failure_rolls_back_and_preserves_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-cleanup-failure",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_remove_backup_refs = workspace_transaction.remove_backup_refs
+    did_fail = False
+
+    def fail_cleanup(*, txn_id: str, cwd: Path) -> None:
+        nonlocal did_fail
+        if not did_fail:
+            did_fail = True
+            raise RuntimeError("simulated cleanup failure")
+        original_remove_backup_refs(txn_id=txn_id, cwd=cwd)
+
+    monkeypatch.setattr(workspace_transaction, "remove_backup_refs", fail_cleanup)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-cleanup-failure",
+            metadata_manager=manager,
+            force=True,
+        )
+
+    assert exc_info.value.code == "delete-cleanup-failed"
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/delete-cleanup-failure",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []
+
+
+@pytest.mark.integration
+def test_delete_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    create_standard_workspace(
+        cwd=repo,
+        branch="feature/no-upstream",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "no-upstream"
+
+    delete_workspace(
+        cwd=repo,
+        branch="feature/no-upstream",
+        metadata_manager=manager,
+        force=True,
+    )
+
+
+@pytest.mark.integration
+def test_delete_dry_run_matches_mutating_block_without_upstream(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    create_standard_workspace(
+        cwd=repo,
+        branch="feature/no-upstream-parity",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    with pytest.raises(AppError) as dry_run_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream-parity",
+            metadata_manager=manager,
+            dry_run=True,
+        )
+
+    with pytest.raises(AppError) as mutating_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream-parity",
+            metadata_manager=manager,
+        )
+
+    assert dry_run_exc_info.value.code == "no-upstream"
+    assert dry_run_exc_info.value.code == mutating_exc_info.value.code
+    assert dry_run_exc_info.value.message == mutating_exc_info.value.message
+
+
+@pytest.mark.integration
+def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-ahead",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/delete-ahead"])
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-ahead"
+
+
+@pytest.mark.integration
+def test_delete_dry_run_matches_mutating_block_when_ahead_of_upstream(
+    tmp_path: Path,
+) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-ahead-parity",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(
+        cwd=destination,
+        args=["push", "-u", "origin", "feature/delete-ahead-parity"],
+    )
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    with pytest.raises(AppError) as dry_run_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead-parity",
+            metadata_manager=manager,
+            dry_run=True,
+        )
+
+    with pytest.raises(AppError) as mutating_exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead-parity",
+            metadata_manager=manager,
+        )
+
+    assert dry_run_exc_info.value.code == "workspace-ahead"
+    assert dry_run_exc_info.value.code == mutating_exc_info.value.code
+    assert dry_run_exc_info.value.message == mutating_exc_info.value.message
+
+
+@pytest.mark.integration
+def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(
+    tmp_path: Path,
+) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+
+    clean_destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-clean",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    dirty_destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-dirty",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=clean_destination, args=["push", "-u", "origin", "feature/prune-clean"])
+    _git(cwd=dirty_destination, args=["push", "-u", "origin", "feature/prune-dirty"])
+    (dirty_destination / "dirty.txt").write_text("dirty\n")
+
+    rendered = prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={
+            "feature/prune-clean": "merged",
+            "feature/prune-dirty": "merged",
+        },
+        dry_run=True,
+        json_output=True,
+    )
+
+    assert rendered is not None
+    assert '"command": "prune"' in rendered
+    assert '"op": "delete-branch"' in rendered
+    assert '"target": "feature/prune-clean"' in rendered
+    assert '"warnings": [' in rendered
+    assert "feature/prune-dirty" in rendered
+    assert clean_destination.exists()
+    assert dirty_destination.exists()
+
+
+@pytest.mark.integration
+def test_prune_skips_current_workspace_without_force(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-current",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    prune_workspaces(
+        cwd=destination,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-current": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-current"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert (
+        "feature/prune-current" in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_prune_force_removes_dirty_workspace_for_merged_pr(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-force",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-force": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-force"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/prune-force"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_prune_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-no-upstream",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-no-upstream": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-no-upstream",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert (
+        "feature/prune-no-upstream"
+        in next(iter(manager.read().repos.values())).workspaces
+    )
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-no-upstream": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-no-upstream",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/prune-no-upstream"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_prune_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-ahead",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/prune-ahead"])
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-ahead": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-ahead"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert "feature/prune-ahead" in next(iter(manager.read().repos.values())).workspaces
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-ahead": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-ahead"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/prune-ahead"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
+def test_prune_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-rollback",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_write = manager.write
+    did_fail = False
+
+    def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
+        nonlocal did_fail
+        if not did_fail and all(
+            "feature/prune-rollback" not in repo_meta.workspaces
+            for repo_meta in metadata.repos.values()
+        ):
+            did_fail = True
+            raise RuntimeError("simulated metadata write failure")
+        original_write(metadata)
+
+    monkeypatch.setattr(manager, "write", fail_once_when_untracking)
+
+    with pytest.raises(AppError) as exc_info:
+        prune_workspaces(
+            cwd=repo,
+            metadata_manager=manager,
+            pr_status_by_branch={"feature/prune-rollback": "merged"},
+            force=True,
+        )
+
+    assert exc_info.value.code == "prune-failed"
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-rollback"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []
+
+
+@pytest.mark.integration
+def test_prune_cleanup_failure_rolls_back_and_preserves_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-cleanup-failure",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_remove_backup_refs = workspace_transaction.remove_backup_refs
+    did_fail = False
+
+    def fail_cleanup(*, txn_id: str, cwd: Path) -> None:
+        nonlocal did_fail
+        if not did_fail:
+            did_fail = True
+            raise RuntimeError("simulated cleanup failure")
+        original_remove_backup_refs(txn_id=txn_id, cwd=cwd)
+
+    monkeypatch.setattr(workspace_transaction, "remove_backup_refs", fail_cleanup)
+
+    with pytest.raises(AppError) as exc_info:
+        prune_workspaces(
+            cwd=repo,
+            metadata_manager=manager,
+            pr_status_by_branch={"feature/prune-cleanup-failure": "merged"},
+            force=True,
+        )
+
+    assert exc_info.value.code == "prune-cleanup-failed"
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-cleanup-failure",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []

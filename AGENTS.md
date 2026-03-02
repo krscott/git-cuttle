@@ -86,14 +86,8 @@ Use `pathlib.Path` instead of `os.path`.
 ## Documentation
 
 ### DESIGN.md
-This file serves as a blueprint for the application's architecture and design. If you make significant changes to...
-
-*   The architecture (e.g., adding modules, changing entry points)
-*   The interface (e.g., CLI arguments, environment variables)
-*   The core functionality
-*   The data flow
-
-...you **must** update `DESIGN.md` to reflect these changes. An AI agent should be able to read `DESIGN.md` and reproduce the current state of the application.
+This file serves as a blueprint for the application's architecture and design.
+An AI agent should be able to read `DESIGN.md` and reproduce the application.
 
 ### TODO.md
 Use to track future TODO items. Create file and add new items as needed.

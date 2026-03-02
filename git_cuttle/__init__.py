@@ -1,3 +1,3 @@
-from git_cuttle.lib import greet
+from git_cuttle.lib import Options
 
-__all__ = ["greet"]
+__all__ = ["Options"]
