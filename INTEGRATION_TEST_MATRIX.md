@@ -56,7 +56,7 @@ Status values:
 |---|---|---|---|
 | `workspaces.json` schema v1 validation and invariants | Persistent Data -> workspaces.json schema | covered | `tests/test_metadata_manager.py` |
 | Canonical repo identity keyed by git dir realpath | Persistent Data -> workspaces.json schema (invariants) | covered | `tests/test_metadata_manager.py` |
-| Atomic metadata writes | Merge strategy (minimum rollback mechanism) | covered | `tests/test_metadata_manager.py` |
+| Atomic metadata writes | Merge strategy (minimum rollback mechanism) | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_new_preserves_metadata_file_on_atomic_replace_failure` |
 | Schema migration creates backup before write | Persistent Data | covered | `tests/test_metadata_manager.py` |
 | Workspace path derivation and deterministic collision handling | Persistent Data -> Workspace path derivation | covered | `tests/test_workspace_paths.py` |
 | Mutating commands auto-track repo; read-only commands do not create tracking entries | Command Scope and Tracking | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_list_does_not_create_tracking_metadata`; `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_commands_from_worktree_use_single_repo_identity` |

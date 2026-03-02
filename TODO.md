@@ -9,7 +9,7 @@ Each story includes implementation work and user-visible automated coverage.
   PR #2 currently fails the `format` check. Run `./format.sh`, commit the
   formatter changes, and ensure CI no longer reports formatting drift.
 
-- [ ] [P1] Story: Add integration coverage for atomic metadata write guarantees.
+- [x] [P1] Story: Add integration coverage for atomic metadata write guarantees.
   `DESIGN.md` requires user-visible requirements to be backed by integration
   tests. The atomic metadata write contract is currently documented as covered
   by unit tests in `INTEGRATION_TEST_MATRIX.md`; add an integration scenario

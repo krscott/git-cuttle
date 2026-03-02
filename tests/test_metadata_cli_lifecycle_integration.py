@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from git_cuttle.metadata_manager import MetadataManager
+
 
 def _init_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], check=True, cwd=path)
@@ -194,3 +196,61 @@ def test_cli_mutating_commands_from_worktree_use_single_repo_identity(
     assert "feature/from-worktree" in list_from_repo.stdout
     assert "feature/from-root" in list_from_worktree.stdout
     assert "feature/from-worktree" in list_from_worktree.stdout
+
+
+@pytest.mark.integration
+def test_cli_new_preserves_metadata_file_on_atomic_replace_failure(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    xdg_data_home = tmp_path / "xdg"
+    env = dict(os.environ)
+    env["XDG_DATA_HOME"] = str(xdg_data_home)
+
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo, now=lambda: "2026-03-02T00:00:00Z")
+    original_metadata_text = metadata_path.read_text()
+
+    runner = tmp_path / "run_new_with_replace_failure.py"
+    runner.write_text(
+        "import sys\n"
+        "from git_cuttle import metadata_manager\n"
+        "from git_cuttle.__main__ import main\n"
+        "metadata_manager._utc_now_iso = lambda: '2026-03-02T00:00:00Z'\n"
+        "original_replace = metadata_manager.os.replace\n"
+        "def fail_once_replace(src, dst):\n"
+        "    if str(dst).endswith('workspaces.json') and 'feature/atomic-replace' in open(src, encoding='utf-8').read():\n"
+        "        raise OSError('simulated replace failure')\n"
+        "    original_replace(src, dst)\n"
+        "metadata_manager.os.replace = fail_once_replace\n"
+        "sys.argv = ['gitcuttle', 'new', '-b', 'feature/atomic-replace', '--destination']\n"
+        "main()\n"
+    )
+
+    result = subprocess.run(
+        ["python", str(runner)],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[new-workspace-failed]: failed to create workspace" in result.stderr
+    assert "simulated replace failure" in result.stderr
+    assert metadata_path.read_text() == original_metadata_text
+    assert list(metadata_path.parent.glob("*.tmp")) == []
+
+    branch_result = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/feature/atomic-replace"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+    assert branch_result.returncode != 0
