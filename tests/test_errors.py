@@ -1,3 +1,5 @@
+import pytest
+
 from git_cuttle.errors import AppError, format_user_error
 
 
@@ -30,3 +32,11 @@ def test_format_user_error_includes_details_when_present() -> None:
         "error[bad-input]: invalid branch name\n"
         "details: branch cannot contain spaces"
     )
+
+
+def test_app_error_raises_with_normal_traceback_handling() -> None:
+    with pytest.raises(AppError) as exc_info:
+        raise AppError(code="traceback", message="traceback assignment should work")
+
+    assert exc_info.value.code == "traceback"
+    assert exc_info.value.__traceback__ is not None

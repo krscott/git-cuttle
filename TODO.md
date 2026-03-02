@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P0] Story: Make `AppError` compatible with Python exception traceback handling.
+- [x] [P0] Story: Make `AppError` compatible with Python exception traceback handling.
   Current `@dataclass(frozen=True)` behavior can raise `FrozenInstanceError`
   while propagating exceptions through context managers (observed under pytest),
   masking the real command failure. Preserve stable error formatting while
