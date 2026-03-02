@@ -1,71 +1,154 @@
 # Design Document
 
-This document outlines the design, architecture, and components of the `git-cuttle` application. It serves as a comprehensive guide for understanding and reproducing the system's functionality.
+This document outlines the design, architecture, and components of the
+`git-cuttle` application. It serves as a comprehensive guide for understanding
+and reproducing the system's functionality.
 
 ## Overview
 
-`git-cuttle` is a Command Line Interface (CLI) application built with Python. It serves as a foundational template for Python projects, featuring structured argument parsing, environment variable configuration, type-safe code, and logging.
+`git-cuttle` is a Command Line Interface (CLI) application for managing git
+multi-branch workflows.
+
+## Design Methodology
+
+In descending order, this project optimizes for:
+
+1. Correctness - ops shall result in a good state
+2. Reliability - ops should be reproducable
+3. User-friendly - ops should have a minimal interface and useful error messages
+4. Speed - ops should be efficient
+
+All requirements listed in this document shall have corresponding integration
+tests. Wherever possible, tests should be implemented first (Red-Green-Refactor).
 
 ## Architecture
 
-The application follows a clean separation of concerns:
+The application is divied into distinct modules
 
-1.  **Entry Point (`__main__.py`)**: Handles CLI interaction, argument parsing, configuration loading, and application bootstrapping.
-2.  **Core Logic (`lib.py`)**: Contains the business logic and domain-specific functionality, independent of the CLI interface.
+- CLI (`__main__.py`): Handles CLI input
+- Orchestrater: Connects other modules
+- Git ops: Wraps the git/gh cli tools in python wrapper functions
+- Metadata manager: Manages persistent metadata of all managed workspaces
 
-## Components
+## Persistent Data
 
-### 1. CLI Entry Point
-*   **File**: `git_cuttle/__main__.py`
-*   **Function**: `main()`
-*   **Responsibilities**:
-    *   Sets the process title using `setproctitle`.
-    *   Loads environment variables from `.env` files using `python-dotenv`.
-    *   Parses command-line arguments.
-    *   Configures the logging system.
-    *   Invokes the core business logic.
+All user data is stored in `$XDG_DATA_HOME/gitcuttle/workspaces.json`.
 
-### 2. Configuration & Argument Parsing
-*   **Mechanism**: `argparse` with a custom Action (`EnvAction`).
-*   **Features**:
-    *   Supports command-line flags (e.g., `-v`, `--verbose`).
-    *   Supports environment variable fallbacks (e.g., `GITCUTTLE_VERBOSE`).
-    *   `EnvAction` class handles the logic: CLI arg > Env Var > Default value.
-*   **Data Model**: `CliOpts` dataclass encapsulates all configuration options, ensuring type safety when passing settings around.
+The schema shall be versioned with a `"version": int` key.
 
-### 3. Core Logic
-*   **File**: `git_cuttle/lib.py`
-*   **Responsibilities**:
-    *   Implements the primary functionality (currently a greeting system).
-    *   Defines domain data models (e.g., `Options`).
-    *   Designed to be testable and reusable, decoupled from `argparse`.
+This data may become outdated between invocations, so must be updated before
+making filesystem changes.
 
-### 4. Logging
-*   **Library**: Standard Python `logging`.
-*   **Configuration**: Configured in `main()` based on the verbosity flag.
-*   **Behavior**:
-    *   Default level: `INFO`.
-    *   Verbose level: `DEBUG`.
-    *   Uses a simple message format.
+## Definitions
 
-## Data Flow
+- workspace: A git workspace, either the original repo or a worktree dir
+- octopus: A branch that is on top of an n-way merge
 
-1.  User invokes the CLI (e.g., `gitcuttle World`).
-2.  `main()` initializes and loads environment variables.
-3.  `CliOpts.parse_args()` processes arguments and environment variables.
-4.  A `CliOpts` object is created, containing an `app_opts` (`Options`) instance and CLI-specific flags.
-5.  Logging is configured based on `CliOpts.verbose`.
-6.  `greet(cli_opts.app_opts)` is called, executing the core logic.
-7.  Output is printed to the console or logged.
+## Changing Directory
 
-## Reproducibility Guide
+It is not possible to `cd` from python. For commands that "change directory":
+- By default, output instructions for changing directory or setting up an alias
+- Accept a `--destination` flag, output only the directory to stdout, to be
+  used by user aliases or bash functions
 
-To reproduce this application, an agent should:
+## Merge strategy
 
-1.  **Setup Project Structure**: Create `git_cuttle/` package and `tests/` directory.
-2.  **Define Dependencies**: Configure `pyproject.toml` with `python-dotenv` and `setproctitle`.
-3.  **Implement `EnvAction`**: Create the custom `argparse.Action` to support environment variable fallbacks.
-4.  **Create Data Models**: Define `Options` and `CliOpts` dataclasses for type-safe configuration.
-5.  **Implement Logic**: Write the core functionality in `lib.py`.
-6.  **Wire Entry Point**: specific `main()` function to orchestrate config, logging, and execution.
-7.  **Add Type Hints**: Ensure all code is strictly typed for `pyright` and `mypy` compliance.
+Only allow clean merge/rebase/cherry-pick. If an operation results in a git
+conflict, show an error message with a suggestion on how to get git into a
+state that would allow the operation.
+
+## Use Cases
+
+In all cases, when a command is executed:
+
+- Start tracking this git repo in `workspaces.json`
+- Commands should work the same regardless if run from original repo dir
+  or from worktree dir
+- All short flags should also have long flags (e.g. `-b,--branch`)
+
+### Creating a new branch and worktree
+
+```
+$ gitcuttle new [BRANCH] [-b NAME]
+```
+
+- Creates a new branch and worktree in `$XDG_DATA_HOME/gitcuttle/<repo>/<branch>`
+- Use given BRANCH as base. If not provided, use current commit as the base
+- If BRANCH is given but does not exist, show an error message, suggest 
+  `new -b NAME` (no BRANCH)
+- Branch name is provided with `-b NAME` or generated using a random inverse 
+  hex (e.g. `workspace-zyxwvut`)
+  - If given branch name contains `/`, it should be sanitized in the dir name,
+    but kept in the git branch name
+- If branch already exists, then show an error message
+- Change directory to workspace dir
+
+#### Creating an octopus branch
+
+```
+$ gitcuttle new BRANCH [BRANCH...] [-b NAME]
+```
+
+- Create a new workspace and branch that is an n-way (octopus) merge with
+  given branches
+- Track all bases in `workspaces.json`
+
+### List workspaces
+
+```
+$ gitcuttle list
+```
+
+Table of tracked workspaces (leave blank if n/a)
+- repo name
+- branch name
+- dirty status
+- remote status: ahead/behind
+- PR status: draft/open/merged
+- description (PR title or last commit)
+
+### Delete workspace
+
+```
+$ gitcuttle delete BRANCH [--dry-run]
+```
+
+- Delete the tracked BRANCH workspace (worktree and branch)
+- If BRANCH is not a tracked workspace show an error message with a suggestion
+  to delete using git cli
+
+### Prune
+
+```
+$ gitcuttle prune [--dry-run]
+```
+
+- Delete all workspaces whose remote branches have been merged or deleted
+
+### Updating a branch
+
+```
+$ gitcuttle update
+```
+
+- Rebase current branch onto the remote branch
+- Handle octopus branches:
+  - Individually rebase each parent branch
+  - Do a new n-way merge
+  - Cherry-pick original post-merge branches
+
+### Absorbing a change (octopus branch)
+
+```
+$ gitcuttle absorb [BRANCH] [-i]
+```
+
+- If not on octopus workspace, show an error
+- If BRANCH is given, rebase post-merge commits onto branch and rebase the
+  octopus merge
+- If `-i` is given, have user interactively select a branch for each
+  post-merge commit
+- If no args given, heuristically determine which branch each commit should go
+  based on the branches' edited files. If not possible to do reliably, show
+  an error and suggest doing interactively.
+
