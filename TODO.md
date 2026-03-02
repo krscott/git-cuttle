@@ -106,7 +106,7 @@ implementation work and user-visible automated test coverage.
   branch cleanup (metadata + directory), and list cache-refresh behavior that
   never creates tracking entries.
 
-- [ ] [P0] Story: Enforce transaction + backup-ref atomicity for all mutating
+- [x] [P0] Story: Enforce transaction + backup-ref atomicity for all mutating
   command paths.
   Wire `new`, `delete`, `prune`, `update`, and `absorb` through a shared
   transaction runner that creates `refs/gitcuttle/txn/<txn-id>/...` backups
