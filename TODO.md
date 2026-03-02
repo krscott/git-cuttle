@@ -2,7 +2,7 @@
 
 ## Foundation
 
-- [ ] Finalize module boundaries (`CLI`, `Orchestrator`, `Git ops`, `Metadata manager`) and wire entry points.
+- [x] Finalize module boundaries (`CLI`, `Orchestrator`, `Git ops`, `Metadata manager`) and wire entry points.
 - [x] Define shared error model and user-facing error formatting for all commands.
 - [ ] Standardize command/flag conventions (short + long flags, shared `--destination` behavior for navigation-style commands).
 

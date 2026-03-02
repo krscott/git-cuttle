@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass(kw_only=True, frozen=True)
-class AppError:
+class AppError(Exception):
     code: str
     message: str
     guidance: tuple[str, ...] = ()

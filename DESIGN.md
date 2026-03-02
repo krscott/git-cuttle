@@ -31,10 +31,14 @@ integration tests. Wherever possible, tests SHOULD be implemented first
 
 The application is divided into distinct modules
 
-- CLI (`__main__.py`): Handles CLI input
-- Orchestrator: Connects other modules
-- Git ops: Wraps the git/gh cli tools in python wrapper functions
-- Metadata manager: Manages persistent metadata of all managed workspaces
+- CLI (`cli.py` + `__main__.py`): Parses argv/env, configures process state/logging,
+  and maps failures to user-facing errors.
+- Orchestrator (`orchestrator.py`): Coordinates command flow and enforces
+  high-level policy checks before invoking lower-level modules.
+- Git ops (`git_ops.py`): Wraps git/gh CLI interaction in testable Python
+  functions.
+- Metadata manager (`metadata_manager.py`): Owns metadata storage locations and
+  persistence helpers for `workspaces.json`.
 
 ## Persistent Data
 
