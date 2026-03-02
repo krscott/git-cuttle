@@ -12,7 +12,7 @@ Each story includes implementation work and user-visible automated coverage.
   `INTEGRATION_TEST_MATRIX.md` references so the `new standard` row points to
   concrete conflict-coverage test IDs.
 
-- [ ] [P1] Story: Prove repo-root/worktree parity for mutating commands.
+- [x] [P1] Story: Prove repo-root/worktree parity for mutating commands.
   `DESIGN.md` states command behavior MUST be the same whether invoked from repo
   root or a worktree directory. Add/expand CLI integration tests for
   `delete`, `prune`, `update`, and `absorb` parity (not just `new`/default
