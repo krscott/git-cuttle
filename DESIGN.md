@@ -12,6 +12,7 @@ It is intentionally scoped to what exists in code today.
 - user-facing structured error formatting
 - metadata schema, validation, migration, and atomic persistence helpers
 - workspace path derivation helpers
+- transactional operation primitive for multi-step branch/worktree mutations
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
 `absorb`) are planned but not yet implemented.
@@ -114,6 +115,21 @@ Implemented guarantees:
 
 These helpers are tested and ready for future command wiring.
 
+## Transaction Framework
+
+`git_cuttle/transaction.py` now provides a reusable transaction primitive for
+future multi-branch/worktree commands.
+
+Implemented behavior:
+
+- explicit ordered transaction steps with `apply` and `rollback` callbacks
+- rollback of already-applied steps in reverse order when a later step fails
+- `TransactionExecutionError` when execution fails but rollback completes
+- `TransactionRollbackError` when rollback is partial, including per-step
+  rollback failure details
+- helper `run_transaction(...)` for one-shot execution with explicit or
+  generated transaction ids
+
 ## Testing Scope
 
 Current integration tests cover:
@@ -131,5 +147,5 @@ derivation utilities.
 
 ## Planned Work
 
-The multi-branch workflow command set and transactional safety framework remain
-planned work and are tracked in `TODO.md`.
+The multi-branch workflow command set remains planned work and is tracked in
+`TODO.md`.
