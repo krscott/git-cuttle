@@ -10,7 +10,12 @@ from git_cuttle.plan_output import DryRunPlan, PlanAction, render_human_plan, re
 
 PrStatus = Literal["merged", "open", "closed", "unknown", "unavailable"]
 PruneReason = Literal["missing-local-branch", "merged-pr"]
-PruneBlockReason = Literal["current-workspace", "workspace-dirty"]
+PruneBlockReason = Literal[
+    "current-workspace",
+    "workspace-dirty",
+    "no-upstream",
+    "ahead-of-upstream",
+]
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -100,6 +105,7 @@ def prune_workspaces(
         statuses=statuses,
         force=force,
         current=current,
+        default_remote=repo.default_remote,
         repo_workspaces=repo.workspaces,
     )
     plan = _build_prune_plan(decisions=decisions, force=force)
@@ -161,6 +167,7 @@ def _prune_decisions(
     statuses: dict[str, PrStatus | None],
     force: bool,
     current: str | None,
+    default_remote: str | None,
     repo_workspaces: dict[str, WorkspaceMetadata],
 ) -> tuple[PruneDecision, ...]:
     decisions: list[PruneDecision] = []
@@ -180,6 +187,10 @@ def _prune_decisions(
             target=branch,
             worktree_path=worktree_path,
             force=force,
+            reason=reason,
+            repo_root=repo_root,
+            tracked_remote=workspace.tracked_remote,
+            default_remote=default_remote,
         )
         decisions.append(
             PruneDecision(
@@ -200,6 +211,10 @@ def prune_block_reason(
     target: str,
     worktree_path: Path,
     force: bool,
+    reason: PruneReason,
+    repo_root: Path,
+    tracked_remote: str | None,
+    default_remote: str | None,
 ) -> PruneBlockReason | None:
     if force:
         return None
@@ -207,7 +222,66 @@ def prune_block_reason(
         return "current-workspace"
     if worktree_path.exists() and _worktree_has_uncommitted_changes(cwd=worktree_path):
         return "workspace-dirty"
+    if reason == "missing-local-branch":
+        return None
+
+    upstream_ref = _workspace_upstream_ref(
+        tracked_remote=tracked_remote,
+        default_remote=default_remote,
+        branch=target,
+    )
+    if upstream_ref is None:
+        return "no-upstream"
+
+    if not _ref_exists(repo_root=repo_root, ref=f"refs/remotes/{upstream_ref}"):
+        return "no-upstream"
+
+    ahead = _ahead_count(repo_root=repo_root, local_branch=target, upstream_ref=upstream_ref)
+    if ahead is None:
+        return "no-upstream"
+    if ahead > 0:
+        return "ahead-of-upstream"
+
     return None
+
+
+def _workspace_upstream_ref(*, tracked_remote: str | None, default_remote: str | None, branch: str) -> str | None:
+    remote_name = tracked_remote or default_remote
+    if remote_name is None:
+        return None
+    return f"{remote_name}/{branch}"
+
+
+def _ref_exists(*, repo_root: Path, ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", ref],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    return result.returncode == 0
+
+
+def _ahead_count(*, repo_root: Path, local_branch: str, upstream_ref: str) -> int | None:
+    result = subprocess.run(
+        ["git", "rev-list", "--left-right", "--count", f"{local_branch}...{upstream_ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+
+    parts = result.stdout.strip().split()
+    if len(parts) != 2:
+        return None
+
+    try:
+        return int(parts[0])
+    except ValueError:
+        return None
 
 
 def _build_prune_plan(*, decisions: tuple[PruneDecision, ...], force: bool) -> DryRunPlan:

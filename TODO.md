@@ -37,7 +37,7 @@ implementation work and user-visible automated test coverage.
   Explicitly resolve current implementation drift where `--force` currently
   bypasses current-workspace protection.
 
-- [ ] [P0] Story: Deliver `gitcuttle prune` end-to-end for merged-PR and missing-branch
+- [x] [P0] Story: Deliver `gitcuttle prune` end-to-end for merged-PR and missing-branch
   cleanup.
   Include prune candidate selection, unknown PR status handling as not merged,
   safety gates with force overrides, and integration tests for dry-run/json and

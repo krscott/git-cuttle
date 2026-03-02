@@ -269,9 +269,19 @@ def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+
     repo = tmp_path / "repo"
-    repo.mkdir()
-    _init_repo(repo)
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
 
     metadata_path = tmp_path / "workspaces.json"
     manager = MetadataManager(path=metadata_path)
@@ -288,6 +298,8 @@ def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(tmp_path: Pa
         base_ref="main",
         metadata_manager=manager,
     )
+    _git(cwd=clean_destination, args=["push", "-u", "origin", "feature/prune-clean"])
+    _git(cwd=dirty_destination, args=["push", "-u", "origin", "feature/prune-dirty"])
     (dirty_destination / "dirty.txt").write_text("dirty\n")
 
     rendered = prune_workspaces(
@@ -373,3 +385,110 @@ def test_prune_force_removes_dirty_workspace_for_merged_pr(tmp_path: Path) -> No
     assert branch_result.returncode != 0
     assert not destination.exists()
     assert "feature/prune-force" not in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_prune_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-no-upstream",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-no-upstream": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-no-upstream"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert "feature/prune-no-upstream" in next(iter(manager.read().repos.values())).workspaces
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-no-upstream": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-no-upstream"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert "feature/prune-no-upstream" not in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_prune_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-ahead",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/prune-ahead"])
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-ahead": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-ahead"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert "feature/prune-ahead" in next(iter(manager.read().repos.values())).workspaces
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-ahead": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-ahead"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert "feature/prune-ahead" not in next(iter(manager.read().repos.values())).workspaces
