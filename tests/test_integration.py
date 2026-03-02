@@ -81,7 +81,6 @@ def test_cli_per_command_invocation_paths(tmp_path: pathlib.Path) -> None:
         (["list"], "list:invoked\n"),
         (["delete", "feature/demo", "--dry-run"], "delete:planned\n"),
         (["prune", "--dry-run"], "prune:planned\n"),
-        (["absorb"], "absorb:invoked\n"),
     ]
 
     for args, expected in command_expectations:

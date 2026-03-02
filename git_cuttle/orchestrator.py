@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 from typing import Protocol
 
+from git_cuttle.absorb import absorb_octopus_workspace
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, in_git_repo, in_progress_operation, repo_root
 from git_cuttle.lib import Options
@@ -85,7 +86,8 @@ def _dispatch_command(
         _run_update(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "absorb":
-        _run_absorb(opts=opts)
+        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        _run_absorb(opts=opts, cwd=cwd, metadata_manager=manager)
         return
 
     raise AppError(
@@ -215,6 +217,88 @@ def _current_branch(*, cwd: Path) -> str | None:
     return branch
 
 
-def _run_absorb(*, opts: Options) -> None:
-    _ = opts
-    print("absorb:invoked")
+def _git_stdout(*, repo_root: Path, args: list[str], code: str, message: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or " ".join(args)
+        raise AppError(code=code, message=message, details=details)
+    return result.stdout.strip()
+
+
+def _run_absorb(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
+    if opts.target_parent is not None and opts.interactive:
+        raise AppError(
+            code="invalid-absorb-options",
+            message="cannot combine an explicit target parent with interactive mode",
+            guidance=("use either `gitcuttle absorb <parent>` or `gitcuttle absorb -i`",),
+        )
+
+    repo = _tracked_repo_for_cwd(cwd=cwd, metadata_manager=metadata_manager)
+    workspace = _current_workspace(cwd=cwd, repo=repo)
+
+    chooser = _interactive_target_selector(repo_root=repo.repo_root) if opts.interactive else None
+    result = absorb_octopus_workspace(
+        repo_root=repo.repo_root,
+        workspace=workspace,
+        target_parent=opts.target_parent,
+        interactive=opts.interactive,
+        choose_target=chooser,
+    )
+
+    if not result.absorbed_commits:
+        print(f"no post-merge commits to absorb for {result.branch}")
+        return
+
+    print(f"absorbed {len(result.absorbed_commits)} commit(s) from {result.branch}")
+
+
+def _interactive_target_selector(*, repo_root: Path):
+    def choose_target(commit: str, parents: tuple[str, ...]) -> str:
+        subject = _git_stdout(
+            repo_root=repo_root,
+            args=["show", "-s", "--format=%s", commit],
+            code="absorb-interactive-inspect-failed",
+            message="failed to read commit details during interactive absorb",
+        )
+        short_oid = commit[:12]
+        print(f"choose parent branch for {short_oid}: {subject}")
+        for index, parent in enumerate(parents, start=1):
+            print(f"  {index}) {parent}")
+
+        try:
+            selection = input("target parent> ").strip()
+        except EOFError as exc:
+            raise AppError(
+                code="interactive-selection-failed",
+                message="interactive absorb selection was interrupted",
+                guidance=("rerun with `-i` and provide a selection or pass an explicit parent",),
+            ) from exc
+
+        selected_parent: str | None = None
+        if selection.isdigit():
+            selected_index = int(selection)
+            if 1 <= selected_index <= len(parents):
+                selected_parent = parents[selected_index - 1]
+        elif selection in parents:
+            selected_parent = selection
+
+        if selected_parent is None:
+            raise AppError(
+                code="invalid-absorb-target",
+                message="interactive absorb target is not a valid octopus parent",
+                details=selection or "<empty>",
+                guidance=(
+                    "rerun with `-i` and select one of the listed parent branches",
+                    "or rerun with an explicit target parent",
+                ),
+            )
+
+        return selected_parent
+
+    return choose_target

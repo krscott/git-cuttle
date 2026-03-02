@@ -50,7 +50,7 @@ implementation work and user-visible automated test coverage.
   behavior, no-upstream error paths, and integration tests validating branch
   history transformations and conflict/error guidance.
 
-- [ ] [P1] Story: Deliver `gitcuttle absorb` end-to-end for octopus workspaces.
+- [x] [P1] Story: Deliver `gitcuttle absorb` end-to-end for octopus workspaces.
   Include explicit target mode, interactive target selection mode, heuristic
   mapping with ambiguity failures, and integration tests that verify commit
   movement semantics and user-facing failure messaging. Validate implementation
