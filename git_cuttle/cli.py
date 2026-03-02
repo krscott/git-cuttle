@@ -196,10 +196,7 @@ def _rollback_workspace_creation(
 
     if get_current_branch() == workspace_name:
         try:
-            if original_branch:
-                run_git(["checkout", original_branch])
-            else:
-                run_git(["checkout", "--detach", original_head])
+            _restore_original_checkout(original_branch, original_head)
         except GitCuttleError as exc:
             errors.append(f"failed to restore original branch: {exc}")
 
@@ -218,6 +215,23 @@ def _rollback_workspace_creation(
         return None
 
     return "; ".join(errors)
+
+
+def _restore_original_checkout(original_branch: str, original_head: str) -> None:
+    if original_branch:
+        run_git(["checkout", original_branch])
+        return
+    run_git(["checkout", "--detach", original_head])
+
+
+def _format_workspace_creation_error(
+    exc: Exception, workspace_name: str, rollback_error: str | None
+) -> str:
+    if rollback_error is None:
+        return f"{exc}\nrolled back created workspace: {workspace_name}"
+    return (
+        f"{exc}\nrollback incomplete for workspace {workspace_name}: {rollback_error}"
+    )
 
 
 def _is_workspace_tracked_worktree_pair(
@@ -347,10 +361,7 @@ def main(argv: list[str] | None = None) -> int:
             created_workspace = create_workspace(args.branches, workspace_name)
             try:
                 if get_current_branch() == created_workspace.merge_branch:
-                    if original_branch:
-                        run_git(["checkout", original_branch])
-                    else:
-                        run_git(["checkout", "--detach", original_head])
+                    _restore_original_checkout(original_branch, original_head)
                 result = ensure_workspace_worktree(created_workspace)
             except Exception as exc:
                 rollback_error = _rollback_workspace_creation(
@@ -358,13 +369,10 @@ def main(argv: list[str] | None = None) -> int:
                     original_branch,
                     original_head,
                 )
-                if rollback_error is None:
-                    raise GitCuttleError(
-                        f"{exc}\nrolled back created workspace: {created_workspace.name}"
-                    ) from exc
                 raise GitCuttleError(
-                    f"{exc}\nrollback incomplete for workspace "
-                    f"{created_workspace.name}: {rollback_error}"
+                    _format_workspace_creation_error(
+                        exc, created_workspace.name, rollback_error
+                    )
                 ) from exc
 
             _show_worktree_result(

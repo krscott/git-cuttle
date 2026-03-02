@@ -1010,7 +1010,9 @@ def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure() -> None:
 
 
 @pytest.mark.integration
-def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure_detached_head() -> None:
+def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure_detached_head() -> (
+    None
+):
     project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
