@@ -65,6 +65,6 @@ Status values:
 
 | Requirement | DESIGN.md section | Status | Planned coverage |
 |---|---|---|---|
-| `list` uses short TTL status cache (default 60s) | Persistent Data -> Status cache | planned | Add integration cases with clock control/fake backend |
+| `list` uses short TTL status cache (default 60s) | Persistent Data -> Status cache | covered | `tests/test_list_cli_integration.py::test_list_reuses_status_cache_within_ttl`; `tests/test_list_cli_integration.py::test_list_refreshes_status_cache_after_ttl_expiry` |
 | Cache refresh does not create tracking entries | Persistent Data -> Status cache | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_list_cache_refresh_never_creates_tracking_metadata` |
 | Prune treats unknown PR status as not merged | Use Cases -> Prune | covered | `tests/test_delete_prune_integration.py::test_prune_does_not_remove_branch_for_unknown_pr_state` |

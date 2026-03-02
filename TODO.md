@@ -13,7 +13,7 @@ implementation work and user-visible automated test coverage.
   scenario and assertions so dry-run JSON still has no side effects while
   honoring the required upstream gate.
 
-- [ ] [P1] Story: Add integration coverage proving `list` status cache TTL behavior.
+- [x] [P1] Story: Add integration coverage proving `list` status cache TTL behavior.
   `DESIGN.md` requires `list` to use a short status cache TTL (default 60s),
   but current matrix marks this as planned and coverage is unit-level only.
   Add black-box CLI integration tests that demonstrate cache reuse within TTL
