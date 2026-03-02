@@ -41,7 +41,7 @@
 
 ## Remote/PR Integration and Caching
 
-- [ ] Implement remote ahead/behind status integration per tracked workspace.
+- [x] Implement remote ahead/behind status integration per tracked workspace.
 - [ ] Implement PR status/title integration against each workspace's tracked remote.
 - [ ] Implement short-TTL status cache (default 60s) used by `list`.
 - [ ] Ensure cache refresh never creates tracking entries.

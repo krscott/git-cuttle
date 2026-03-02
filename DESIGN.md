@@ -13,6 +13,7 @@ It is intentionally scoped to what exists in code today.
 - metadata schema, validation, migration, and atomic persistence helpers
 - workspace path derivation helpers
 - transactional operation primitive for multi-step branch/worktree mutations
+- remote ahead/behind status resolution helpers for tracked workspaces
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
 `absorb`) are planned but not yet implemented.
@@ -123,6 +124,21 @@ Implemented guarantees:
   to the same directory name
 
 These helpers are tested and ready for future command wiring.
+
+## Remote Status Helpers
+
+`git_cuttle/remote_status.py` computes ahead/behind status for tracked
+workspaces against their configured upstream remote refs.
+
+Implemented behavior:
+
+- derive upstream as `<tracked_remote>/<branch>` or `<default_remote>/<branch>`
+- return unknown status when local branch or remote-tracking ref is missing
+- compute ahead/behind counts using `git rev-list --left-right --count`
+- provide per-workspace and per-repo status mapping helpers
+
+This is currently library-level functionality and is not yet wired to the
+`list` command output.
 
 ## Transaction Framework
 
