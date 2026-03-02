@@ -101,8 +101,13 @@ def _load_tracked_worktree(path: Path) -> TrackedWorktree:
 
 def save_tracked_worktree(entry: TrackedWorktree) -> None:
     path = _tracked_worktree_path(entry.branch)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(entry), indent=2), encoding="utf-8")
+    _mkdir_parents(path.parent, description="tracked worktree metadata directory")
+    try:
+        path.write_text(json.dumps(asdict(entry), indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise GitCuttleError(
+            f"failed to persist tracked worktree metadata for {entry.branch}: {exc}"
+        ) from exc
 
 
 def get_tracked_worktree(branch_name: str | None = None) -> TrackedWorktree | None:
@@ -138,6 +143,13 @@ def _xdg_data_home() -> Path:
     if xdg_data_home:
         return Path(xdg_data_home).expanduser().resolve()
     return (Path.home() / ".local" / "share").resolve()
+
+
+def _mkdir_parents(path: Path, description: str) -> None:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise GitCuttleError(f"failed to create {description} {path}: {exc}") from exc
 
 
 def _branch_relative_path(branch: str) -> Path:
@@ -236,12 +248,7 @@ def _ensure_worktree(
     target_path, reused = _check_target_path(branch)
     if reused:
         tracked = _build_tracked_worktree(branch, kind, workspace_name)
-        try:
-            save_tracked_worktree(tracked)
-        except OSError as exc:
-            raise GitCuttleError(
-                f"failed to persist tracked worktree metadata for {branch}: {exc}"
-            ) from exc
+        save_tracked_worktree(tracked)
         return EnsureWorktreeResult(tracked=tracked, reused=True)
 
     remote_ref: str | None = None
@@ -254,12 +261,7 @@ def _ensure_worktree(
     else:
         remote_ref = resolve_remote_branch(branch)
 
-    try:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise GitCuttleError(
-            f"failed to create managed worktree directory {target_path.parent}: {exc}"
-        ) from exc
+    _mkdir_parents(target_path.parent, description="managed worktree directory")
 
     if remote_ref is None:
         add_git_worktree(target_path, branch)
@@ -267,12 +269,7 @@ def _ensure_worktree(
         add_git_worktree_from_remote(target_path, branch, remote_ref)
 
     tracked = _build_tracked_worktree(branch, kind, workspace_name)
-    try:
-        save_tracked_worktree(tracked)
-    except OSError as exc:
-        raise GitCuttleError(
-            f"failed to persist tracked worktree metadata for {branch}: {exc}"
-        ) from exc
+    save_tracked_worktree(tracked)
     return EnsureWorktreeResult(tracked=tracked, reused=False)
 
 
