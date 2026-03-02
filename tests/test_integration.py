@@ -22,6 +22,48 @@ def _git_output(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _init_repo_with_feature_a_and_b(repo: Path) -> None:
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+
+    _git(repo, "checkout", "-b", "feature-a")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "a")
+    _git(repo, "checkout", "main")
+
+    _git(repo, "checkout", "-b", "feature-b")
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "b")
+    _git(repo, "checkout", "main")
+
+
+def _create_tracked_worktree(repo: Path, run_env: dict[str, str], branch: str) -> Path:
+    result = subprocess.run(
+        [sys.executable, "-m", "git_cuttle", "worktree", branch, "--print-path"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=run_env,
+    )
+    assert result.returncode == 0
+    worktree_path = Path(result.stdout.strip())
+    assert worktree_path.exists()
+    return worktree_path
+
+
+def _tracked_worktree_metadata_file(repo: Path, branch: str) -> Path:
+    git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
+    tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
+    return tracked_dir / f"{hashlib.sha256(branch.encode()).hexdigest()}.json"
+
+
 @pytest.mark.integration
 def test_cli_new_list_status() -> None:
     project_root = Path(__file__).resolve().parents[1]
@@ -351,69 +393,12 @@ def test_cli_delete_worktree_only_rejects_metadata_path_branch_mismatch() -> Non
         repo = root / "repo"
         xdg_data_home = root / "xdg-data"
         repo.mkdir()
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "test@example.com")
-        _git(repo, "config", "user.name", "Test User")
-        (repo / "base.txt").write_text("base\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "base")
-
-        _git(repo, "checkout", "-b", "feature-a")
-        (repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "a")
-        _git(repo, "checkout", "main")
-
-        _git(repo, "checkout", "-b", "feature-b")
-        (repo / "b.txt").write_text("b\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "b")
-        _git(repo, "checkout", "main")
+        _init_repo_with_feature_a_and_b(repo)
 
         run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
-        create_a_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "git_cuttle",
-                "worktree",
-                "feature-a",
-                "--print-path",
-            ],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            text=True,
-            env=run_env,
-        )
-        assert create_a_result.returncode == 0
-        feature_a_path = Path(create_a_result.stdout.strip())
-        assert feature_a_path.exists()
-
-        create_b_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "git_cuttle",
-                "worktree",
-                "feature-b",
-                "--print-path",
-            ],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            text=True,
-            env=run_env,
-        )
-        assert create_b_result.returncode == 0
-        feature_b_path = Path(create_b_result.stdout.strip())
-        assert feature_b_path.exists()
-
-        git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
-        tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
-        feature_a_metadata = (
-            tracked_dir / f"{hashlib.sha256('feature-a'.encode()).hexdigest()}.json"
-        )
+        feature_a_path = _create_tracked_worktree(repo, run_env, "feature-a")
+        feature_b_path = _create_tracked_worktree(repo, run_env, "feature-b")
+        feature_a_metadata = _tracked_worktree_metadata_file(repo, "feature-a")
 
         payload = json.loads(feature_a_metadata.read_text(encoding="utf-8"))
         payload["path"] = str(feature_b_path)
@@ -452,69 +437,12 @@ def test_cli_delete_worktree_only_rejects_metadata_key_branch_mismatch() -> None
         repo = root / "repo"
         xdg_data_home = root / "xdg-data"
         repo.mkdir()
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "test@example.com")
-        _git(repo, "config", "user.name", "Test User")
-        (repo / "base.txt").write_text("base\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "base")
-
-        _git(repo, "checkout", "-b", "feature-a")
-        (repo / "a.txt").write_text("a\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "a")
-        _git(repo, "checkout", "main")
-
-        _git(repo, "checkout", "-b", "feature-b")
-        (repo / "b.txt").write_text("b\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "b")
-        _git(repo, "checkout", "main")
+        _init_repo_with_feature_a_and_b(repo)
 
         run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
-        create_a_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "git_cuttle",
-                "worktree",
-                "feature-a",
-                "--print-path",
-            ],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            text=True,
-            env=run_env,
-        )
-        assert create_a_result.returncode == 0
-        feature_a_path = Path(create_a_result.stdout.strip())
-        assert feature_a_path.exists()
-
-        create_b_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "git_cuttle",
-                "worktree",
-                "feature-b",
-                "--print-path",
-            ],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            text=True,
-            env=run_env,
-        )
-        assert create_b_result.returncode == 0
-        feature_b_path = Path(create_b_result.stdout.strip())
-        assert feature_b_path.exists()
-
-        git_common_dir = _git_output(repo, "rev-parse", "--git-common-dir")
-        tracked_dir = repo / git_common_dir / "gitcuttle" / "tracked-worktrees"
-        feature_a_metadata = (
-            tracked_dir / f"{hashlib.sha256('feature-a'.encode()).hexdigest()}.json"
-        )
+        feature_a_path = _create_tracked_worktree(repo, run_env, "feature-a")
+        feature_b_path = _create_tracked_worktree(repo, run_env, "feature-b")
+        feature_a_metadata = _tracked_worktree_metadata_file(repo, "feature-a")
 
         payload = json.loads(feature_a_metadata.read_text(encoding="utf-8"))
         payload["branch"] = "feature-b"
