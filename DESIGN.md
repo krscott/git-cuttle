@@ -40,8 +40,63 @@ The schema shall be versioned with a `"version": int` key.
 When the schema version changes, the app shall auto-migrate data to the latest
 version and create a timestamped backup before writing.
 
+Backups shall be written before migration as:
+`$XDG_DATA_HOME/gitcuttle/workspaces.json.bak.<unix-timestamp>`.
+
 This data may become outdated between invocations, so must be updated before
 making filesystem changes.
+
+### `workspaces.json` schema
+
+`workspaces.json` shall have this structure:
+
+```json
+{
+  "version": 1,
+  "repos": {
+    "<git_dir_realpath>": {
+      "git_dir": "<absolute realpath to .git dir>",
+      "repo_root": "<absolute repo root path>",
+      "default_remote": "origin",
+      "tracked_at": "<ISO-8601 timestamp>",
+      "updated_at": "<ISO-8601 timestamp>",
+      "workspaces": {
+        "<branch_name>": {
+          "branch": "<git branch name>",
+          "worktree_path": "<absolute path>",
+          "tracked_remote": "origin",
+          "kind": "standard | octopus",
+          "base_ref": "<branch or commit used as base>",
+          "octopus_parents": ["<branch>", "<branch>"],
+          "created_at": "<ISO-8601 timestamp>",
+          "updated_at": "<ISO-8601 timestamp>"
+        }
+      }
+    }
+  }
+}
+```
+
+Schema invariants:
+
+- The canonical repo identity key is the realpath of the git directory
+  (`<git_dir_realpath>`).
+- `repos[<git_dir_realpath>].git_dir` must match the map key exactly.
+- `default_remote` and `tracked_remote` may be `null` when no remote context is
+  configured.
+- Workspace map keys are branch names and must match
+  `workspaces[...].branch` exactly.
+- `worktree_path` must be unique within a repo.
+- `kind=standard` requires `octopus_parents=[]`.
+- `kind=octopus` requires `octopus_parents` with at least two branches.
+- Octopus parent order is significant and must be preserved exactly as entered.
+- Branch names are stored unsanitized in metadata. Any sanitized filesystem
+  directory naming is derived and not used as identity.
+
+### Status cache
+
+`list` shall use a short TTL cache (default: 60 seconds) for remote/PR status.
+Cache refresh must never create new repo tracking entries.
 
 ## Command Scope and Tracking
 
@@ -64,6 +119,9 @@ It is not possible to `cd` from python. For commands that "change directory":
 - Accept a `--destination` flag, output only the directory to stdout, to be
   used by user aliases or bash functions
 
+`--destination` is a shared convention for any current or future command that
+conceptually navigates the user to a workspace path.
+
 ## Merge strategy
 
 Only allow clean merge/rebase/cherry-pick. If an operation results in a git
@@ -73,6 +131,11 @@ state that would allow the operation.
 Operations that touch multiple branches/worktrees must be atomic. If a failure
 occurs, roll back all touched branches, worktrees, and metadata to their
 pre-command state.
+
+If rollback itself fails, exit non-zero and print:
+
+- The exact partial state that remains
+- Deterministic recovery commands the user can run to restore consistency
 
 ## Use Cases
 
@@ -98,6 +161,7 @@ $ gitcuttle new [BRANCH] [-b NAME]
   - If given branch name contains `/`, it should be sanitized in the dir name,
     but kept in the git branch name. The sanitization mapping must be stable.
 - If branch already exists locally or on its tracked remote, then show an error message
+- If no tracked remote/upstream context exists, branch-exists checks are local-only
 - Print destination path/instructions; do not attempt to change the caller's cwd
 
 #### Creating an octopus branch
@@ -131,7 +195,7 @@ show unknown/blank markers and continue.
 ### Delete workspace
 
 ```
-$ gitcuttle delete BRANCH [--dry-run] [--force]
+$ gitcuttle delete BRANCH [--dry-run] [--json] [--force]
 ```
 
 - Delete the tracked BRANCH workspace (worktree and branch)
@@ -139,11 +203,15 @@ $ gitcuttle delete BRANCH [--dry-run] [--force]
   to delete using git cli
 - If workspace is dirty or branch is ahead of remote, block deletion unless
   `--force` is provided
+- `--force` may proceed even when no upstream is configured
+- If BRANCH is the currently checked out workspace, error and suggest switching
+  to a safe workspace before deleting
+- `--dry-run --json` shall output a machine-readable plan without side effects
 
 ### Prune
 
 ```
-$ gitcuttle prune [--dry-run] [--force]
+$ gitcuttle prune [--dry-run] [--json] [--force]
 ```
 
 - Delete tracked workspaces when either:
@@ -151,8 +219,10 @@ $ gitcuttle prune [--dry-run] [--force]
   - The local branch no longer exists (for example, deleted manually via git cli)
 - If workspace is dirty or branch is ahead of remote, block deletion unless
   `--force` is provided
+- `--force` may proceed even when no upstream is configured
 - When pruning a missing local branch, remove both metadata and the workspace
   worktree directory
+- `--dry-run --json` shall output a machine-readable plan without side effects
 
 ### Updating a branch
 
