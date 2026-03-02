@@ -9,6 +9,7 @@ from git_cuttle.git_ops import (
     create_octopus_merge,
     get_current_branch,
     get_merge_base,
+    list_remote_branch_matches,
     run_git,
 )
 
@@ -68,3 +69,31 @@ def test_get_merge_base(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     _git(repo, "commit", "-m", "b")
 
     assert get_merge_base(["feature-a", "feature-b"]) == base
+
+
+def test_list_remote_branch_matches_uses_exact_branch_part(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def _fake_run_git(
+        args: list[str], check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
+        assert check is True
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=0,
+            stdout=(
+                "origin/HEAD\n"
+                "origin/feature/x\n"
+                "origin/team/feature/x\n"
+                "fork/feature/x\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("git_cuttle.git_ops.run_git", _fake_run_git)
+
+    assert list_remote_branch_matches("feature/x") == [
+        "fork/feature/x",
+        "origin/feature/x",
+    ]
