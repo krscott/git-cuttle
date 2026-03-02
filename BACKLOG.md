@@ -25,3 +25,11 @@ Nice-to-have improvements discovered during PR review.
 - [ ] Add a tiny automation script that verifies every `covered` matrix row in
   `INTEGRATION_TEST_MATRIX.md` references at least one `@pytest.mark.integration`
   test ID.
+
+- [ ] Add a `design-contract-audit` helper that compares `DESIGN.md` MUST
+  statements against matrix rows and reports missing/weakly-referenced
+  requirements before review.
+
+- [ ] Add reusable integration fixtures for repo/worktree parity scenarios to
+  reduce duplication across command parity tests and make contract gaps cheaper
+  to cover.

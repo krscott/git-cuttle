@@ -5,16 +5,15 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [x] [P1] Story: Restore mypy clean run for rollback helper usage.
-  `python -m mypy .` currently fails with `attr-defined` errors in
-  `tests/test_delete_prune_integration.py` when referencing
-  `workspace_transaction.remove_backup_refs`. Update exports or call sites so
-  both rollback-failure integration tests type-check cleanly while preserving
-  existing behavior.
+- [ ] [P1] Story: Add missing `new` branch-conflict integration coverage.
+  `DESIGN.md` requires `gitcuttle new` to reject target branches that already
+  exist locally or on tracked remotes, and to use local-only checks when no
+  remote context exists. Add CLI integration tests for these branches and update
+  `INTEGRATION_TEST_MATRIX.md` references so the `new standard` row points to
+  concrete conflict-coverage test IDs.
 
-- [x] [P2] Story: Ensure workspace-path DESIGN row is backed by CLI integration references.
-  `INTEGRATION_TEST_MATRIX.md` marks Workspace path derivation as covered but
-  currently references `tests/test_workspace_paths.py` (unit-level). Add/expand
-  CLI integration assertions for `<repo-slug>-<hash8>` and deterministic
-  collision suffix behavior, then point the matrix row at those integration
-  tests.
+- [ ] [P1] Story: Prove repo-root/worktree parity for mutating commands.
+  `DESIGN.md` states command behavior MUST be the same whether invoked from repo
+  root or a worktree directory. Add/expand CLI integration tests for
+  `delete`, `prune`, `update`, and `absorb` parity (not just `new`/default
+  invocation), then update matrix references to those parity assertions.
