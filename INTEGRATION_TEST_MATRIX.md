@@ -58,7 +58,7 @@ Status values:
 | Canonical repo identity keyed by git dir realpath | Persistent Data -> workspaces.json schema (invariants) | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_commands_from_worktree_use_single_repo_identity`; `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_command_rejects_noncanonical_repo_identity_key` |
 | Atomic metadata writes | Merge strategy (minimum rollback mechanism) | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_new_preserves_metadata_file_on_atomic_replace_failure` |
 | Schema migration creates backup before write | Persistent Data | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_command_migrates_existing_metadata` |
-| Workspace path derivation and deterministic collision handling | Persistent Data -> Workspace path derivation | covered | `tests/test_workspace_paths.py` |
+| Workspace path derivation and deterministic collision handling | Persistent Data -> Workspace path derivation | covered | `tests/test_new_cli_integration.py::test_cli_new_collision_uses_deterministic_paths_and_unsanitized_metadata_keys` |
 | Mutating commands auto-track repo; read-only commands do not create tracking entries | Command Scope and Tracking | covered | `tests/test_metadata_cli_lifecycle_integration.py::test_cli_list_does_not_create_tracking_metadata`; `tests/test_metadata_cli_lifecycle_integration.py::test_cli_mutating_commands_from_worktree_use_single_repo_identity` |
 
 ## Remote and cache contracts

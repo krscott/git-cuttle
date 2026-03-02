@@ -12,7 +12,7 @@ Each story includes implementation work and user-visible automated coverage.
   both rollback-failure integration tests type-check cleanly while preserving
   existing behavior.
 
-- [ ] [P2] Story: Ensure workspace-path DESIGN row is backed by CLI integration references.
+- [x] [P2] Story: Ensure workspace-path DESIGN row is backed by CLI integration references.
   `INTEGRATION_TEST_MATRIX.md` marks Workspace path derivation as covered but
   currently references `tests/test_workspace_paths.py` (unit-level). Add/expand
   CLI integration assertions for `<repo-slug>-<hash8>` and deterministic

@@ -189,7 +189,7 @@ def test_cli_new_without_branch_generates_unique_names_across_runs(
 def test_cli_new_collision_uses_deterministic_paths_and_unsanitized_metadata_keys(
     tmp_path: pathlib.Path,
 ) -> None:
-    repo = tmp_path / "repo"
+    repo = tmp_path / "My Repo"
     repo.mkdir()
     _init_repo(repo)
 
@@ -219,10 +219,15 @@ def test_cli_new_collision_uses_deterministic_paths_and_unsanitized_metadata_key
 
     first_destination = pathlib.Path(first.stdout.strip())
     second_destination = pathlib.Path(second.stdout.strip())
+    expected_repo_hash = hashlib.sha256(
+        str((repo / ".git").resolve(strict=False)).encode("utf-8")
+    ).hexdigest()[:8]
+    expected_repo_dir = tmp_path / "xdg" / "gitcuttle" / f"my-repo-{expected_repo_hash}"
     expected_suffix = hashlib.sha256(second_branch.encode("utf-8")).hexdigest()[:6]
 
     assert first_destination.is_dir()
     assert second_destination.is_dir()
+    assert first_destination.parent == expected_repo_dir
     assert first_destination.parent == second_destination.parent
     assert first_destination.name == "feature-a"
     assert second_destination.name == f"feature-a-{expected_suffix}"
