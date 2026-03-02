@@ -5,7 +5,7 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Restore mypy clean run for rollback helper usage.
+- [x] [P1] Story: Restore mypy clean run for rollback helper usage.
   `python -m mypy .` currently fails with `attr-defined` errors in
   `tests/test_delete_prune_integration.py` when referencing
   `workspace_transaction.remove_backup_refs`. Update exports or call sites so

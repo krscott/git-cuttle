@@ -5,7 +5,7 @@ from git_cuttle.errors import AppError
 from git_cuttle.git_ops import (
     backup_ref_for_branch,
     create_backup_refs_for_branches,
-    remove_backup_refs,
+    remove_backup_refs as remove_backup_refs,
     restore_branch_from_backup_ref,
     set_branch_head,
 )
