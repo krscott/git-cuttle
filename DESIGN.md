@@ -14,9 +14,10 @@ It is intentionally scoped to what exists in code today.
 - workspace path derivation helpers
 - transactional operation primitive for multi-step branch/worktree mutations
 - remote ahead/behind status resolution helpers for tracked workspaces
+- list table rendering helpers with unknown-status markers
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
-`absorb`) are planned but not yet implemented.
+`absorb`) are planned but not yet implemented end-to-end in the CLI.
 
 ## Runtime Flow
 
@@ -144,6 +145,16 @@ Implemented behavior:
   missing, or CLI output cannot be parsed safely
 - provide a `RemoteStatusCache` with a default 60-second TTL for list-style
   repeated status lookups
+- render list rows into a stable table format with columns:
+  - `BRANCH`
+  - `KIND`
+  - `BASE`
+  - `UPSTREAM`
+  - `AHEAD`
+  - `BEHIND`
+  - `PR`
+  - `WORKTREE`
+- use `?` markers for unknown remote fields (`upstream`, `ahead`, `behind`)
 
 This is currently library-level functionality and is not yet wired to the
 `list` command output.

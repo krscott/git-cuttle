@@ -32,7 +32,7 @@
 
 - [ ] Implement `gitcuttle new` for standard workspace creation (base resolution, branch creation, destination output).
 - [ ] Implement octopus `gitcuttle new` (n-way merge creation, ordered parent tracking).
-- [ ] Implement `gitcuttle list` table output with required columns and graceful unknown markers.
+- [x] Implement `gitcuttle list` table output with required columns and graceful unknown markers.
 - [ ] Implement `gitcuttle delete` with tracked-workspace checks, safety gates, `--force`, `--dry-run`, and `--json` plan output.
 - [ ] Implement `gitcuttle prune` with merged-PR or missing-local-branch criteria, safety gates, `--force`, `--dry-run`, and `--json` plan output.
 - [ ] Implement `gitcuttle update` for non-octopus branches (upstream rebase rules + no-upstream error path).
