@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from git_cuttle.errors import AppError
 from git_cuttle.delete import current_branch, delete_block_reason
+from git_cuttle.delete import delete_workspace
+from git_cuttle.metadata_manager import MetadataManager
+from git_cuttle.new import create_standard_workspace
 from git_cuttle.prune import prune_candidate_for_branch, prune_reason
 
 
@@ -77,3 +81,113 @@ def test_prune_does_not_remove_branch_for_unknown_pr_state(tmp_path: Path) -> No
 
     assert candidate.local_branch_exists
     assert prune_reason(candidate) is None
+
+
+@pytest.mark.integration
+def test_delete_requires_tracked_workspace(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/missing",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-not-tracked"
+
+
+@pytest.mark.integration
+def test_delete_dry_run_json_outputs_plan_without_changes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-dry-run",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    rendered = delete_workspace(
+        cwd=repo,
+        branch="feature/delete-dry-run",
+        metadata_manager=manager,
+        dry_run=True,
+        json_output=True,
+    )
+
+    assert rendered is not None
+    assert '"command": "delete"' in rendered
+    assert '"dry_run": true' in rendered
+    assert '"target": "feature/delete-dry-run"' in rendered
+    assert destination.exists()
+    assert "feature/delete-dry-run" in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_delete_blocks_dirty_workspace_without_force(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-dirty",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-dirty",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-dirty"
+
+
+@pytest.mark.integration
+def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-force",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    delete_workspace(
+        cwd=repo,
+        branch="feature/delete-force",
+        metadata_manager=manager,
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-force"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert "feature/delete-force" not in next(iter(manager.read().repos.values())).workspaces
