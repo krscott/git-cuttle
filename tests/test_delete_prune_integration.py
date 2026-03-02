@@ -8,7 +8,7 @@ from git_cuttle.delete import current_branch, delete_block_reason
 from git_cuttle.delete import delete_workspace
 from git_cuttle.metadata_manager import MetadataManager
 from git_cuttle.new import create_standard_workspace
-from git_cuttle.prune import prune_candidate_for_branch, prune_reason
+from git_cuttle.prune import prune_candidate_for_branch, prune_reason, prune_workspaces
 
 
 def _git(*, cwd: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -191,3 +191,111 @@ def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> N
     assert branch_result.returncode != 0
     assert not destination.exists()
     assert "feature/delete-force" not in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_prune_dry_run_json_outputs_prune_plan_and_blocking_warning(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+
+    clean_destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-clean",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    dirty_destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-dirty",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (dirty_destination / "dirty.txt").write_text("dirty\n")
+
+    rendered = prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={
+            "feature/prune-clean": "merged",
+            "feature/prune-dirty": "merged",
+        },
+        dry_run=True,
+        json_output=True,
+    )
+
+    assert rendered is not None
+    assert '"command": "prune"' in rendered
+    assert '"op": "delete-branch"' in rendered
+    assert '"target": "feature/prune-clean"' in rendered
+    assert '"warnings": [' in rendered
+    assert "feature/prune-dirty" in rendered
+    assert clean_destination.exists()
+    assert dirty_destination.exists()
+
+
+@pytest.mark.integration
+def test_prune_skips_current_workspace_without_force(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-current",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    prune_workspaces(
+        cwd=destination,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-current": "merged"},
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-current"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert "feature/prune-current" in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_prune_force_removes_dirty_workspace_for_merged_pr(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-force",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    (destination / "dirty.txt").write_text("dirty\n")
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-force": "merged"},
+        force=True,
+    )
+
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-force"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert "feature/prune-force" not in next(iter(manager.read().repos.values())).workspaces
