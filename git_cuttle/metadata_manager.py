@@ -2,13 +2,14 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, cast
+from typing import Callable, Literal, cast
 
 
 SCHEMA_VERSION = 1
 WorkspaceKind = Literal["standard", "octopus"]
+MigrationFn = Callable[[dict[str, object]], dict[str, object]]
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -57,7 +58,16 @@ class MetadataManager:
         if not self.path.exists():
             return WorkspacesMetadata(version=SCHEMA_VERSION, repos={})
 
-        loaded = json.loads(self.path.read_text())
+        raw_text = self.path.read_text()
+        loaded = json.loads(raw_text)
+        loaded, migrated = _migrate_workspaces_metadata(loaded)
+        if migrated:
+            _write_migration_backup(self.path, raw_text)
+            _atomic_write_text(
+                self.path,
+                json.dumps(loaded, indent=2),
+            )
+
         metadata = _parse_workspaces_metadata(loaded)
         _validate_workspaces_metadata(metadata)
         return metadata
@@ -205,6 +215,60 @@ def _parse_workspaces_metadata(raw: object) -> WorkspacesMetadata:
         )
 
     return WorkspacesMetadata(version=version, repos=repos)
+
+
+def _migrate_workspaces_metadata(raw: object) -> tuple[dict[str, object], bool]:
+    root = _expect_json_object(raw, context="metadata file")
+    version = root.get("version")
+
+    if not isinstance(version, int):
+        raise ValueError("metadata version must be an integer")
+    if version > SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported metadata schema version: {version}; expected <= {SCHEMA_VERSION}"
+        )
+    if version == SCHEMA_VERSION:
+        return root, False
+
+    migrated = dict(root)
+    current_version = version
+    while current_version < SCHEMA_VERSION:
+        migrate = _MIGRATIONS.get(current_version)
+        if migrate is None:
+            raise ValueError(
+                f"unsupported metadata schema version: {current_version}; expected {SCHEMA_VERSION}"
+            )
+
+        migrated = migrate(migrated)
+        current_version += 1
+        migrated_version = migrated.get("version")
+        if migrated_version != current_version:
+            raise ValueError(
+                f"migration from schema version {current_version - 1} did not produce version {current_version}"
+            )
+
+    return migrated, True
+
+
+def _migrate_v0_to_v1(raw: dict[str, object]) -> dict[str, object]:
+    migrated = dict(raw)
+    migrated["version"] = 1
+    return migrated
+
+
+_MIGRATIONS: dict[int, MigrationFn] = {
+    0: _migrate_v0_to_v1,
+}
+
+
+def _write_migration_backup(path: Path, file_content: str) -> Path:
+    timestamp = int(datetime.now(tz=timezone.utc).timestamp())
+    backup_path = path.with_name(f"{path.name}.bak.{timestamp}")
+    while backup_path.exists():
+        timestamp += 1
+        backup_path = path.with_name(f"{path.name}.bak.{timestamp}")
+    _atomic_write_text(backup_path, file_content)
+    return backup_path
 
 
 def _serialize_workspaces_metadata(metadata: WorkspacesMetadata) -> dict[str, object]:

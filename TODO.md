@@ -11,7 +11,7 @@
 - [x] Implement `workspaces.json` schema v1 read/write models with validation and invariants.
 - [x] Use git dir realpath as canonical repo identity and enforce repo/workspace key consistency.
 - [x] Implement atomic metadata writes (temp file + fsync + rename).
-- [ ] Implement schema migration framework with pre-migration backup creation.
+- [x] Implement schema migration framework with pre-migration backup creation.
 - [ ] Implement workspace path derivation (`<repo-id>/<branch-dir>`) including deterministic collision handling.
 
 ## Core Safety and Transactions

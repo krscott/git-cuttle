@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -214,3 +215,54 @@ def test_write_validates_workspace_kind_invariants(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="octopus workspaces must have at least two parents"):
         manager.write(invalid)
+
+
+def test_read_migrates_legacy_schema_and_creates_backup(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "workspaces.json"
+    legacy_payload: dict[str, object] = {
+        "version": 0,
+        "repos": {
+            "/repos/demo/.git": {
+                "git_dir": "/repos/demo/.git",
+                "repo_root": "/repos/demo",
+                "default_remote": None,
+                "tracked_at": "2026-03-01T00:00:00+00:00",
+                "updated_at": "2026-03-01T00:00:00+00:00",
+                "workspaces": {
+                    "feature/a": {
+                        "branch": "feature/a",
+                        "worktree_path": "/wt/feature-a",
+                        "tracked_remote": None,
+                        "kind": "standard",
+                        "base_ref": "main",
+                        "octopus_parents": list[str](),
+                        "created_at": "2026-03-01T00:00:00+00:00",
+                        "updated_at": "2026-03-01T00:00:00+00:00",
+                    }
+                },
+            }
+        },
+    }
+    original_text = json.dumps(legacy_payload, indent=2)
+    metadata_path.write_text(original_text)
+
+    manager = MetadataManager(path=metadata_path)
+    metadata = manager.read()
+
+    assert metadata.version == SCHEMA_VERSION
+    migrated_raw = json.loads(metadata_path.read_text())
+    assert migrated_raw["version"] == SCHEMA_VERSION
+
+    backups = sorted(tmp_path.glob("workspaces.json.bak.*"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == original_text
+
+
+def test_read_rejects_newer_schema_version(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "workspaces.json"
+    metadata_path.write_text(json.dumps({"version": SCHEMA_VERSION + 1, "repos": {}}, indent=2))
+
+    manager = MetadataManager(path=metadata_path)
+
+    with pytest.raises(ValueError, match="unsupported metadata schema version"):
+        manager.read()
