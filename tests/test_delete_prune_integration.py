@@ -44,7 +44,10 @@ def test_delete_blocks_current_workspace_without_force(tmp_path: Path) -> None:
         delete_block_reason(current=active_branch, target="feature/current", force=False)
         == "current-workspace"
     )
-    assert delete_block_reason(current=active_branch, target="feature/current", force=True) is None
+    assert (
+        delete_block_reason(current=active_branch, target="feature/current", force=True)
+        == "current-workspace"
+    )
 
 
 @pytest.mark.integration
@@ -191,6 +194,77 @@ def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> N
     assert branch_result.returncode != 0
     assert not destination.exists()
     assert "feature/delete-force" not in next(iter(manager.read().repos.values())).workspaces
+
+
+@pytest.mark.integration
+def test_delete_blocks_without_upstream_unless_forced(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    create_standard_workspace(
+        cwd=repo,
+        branch="feature/no-upstream",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/no-upstream",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "no-upstream"
+
+    delete_workspace(
+        cwd=repo,
+        branch="feature/no-upstream",
+        metadata_manager=manager,
+        force=True,
+    )
+
+
+@pytest.mark.integration
+def test_delete_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    manager.ensure_repo_tracked(cwd=repo)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-ahead",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    _git(cwd=destination, args=["push", "-u", "origin", "feature/delete-ahead"])
+    (destination / "ahead.txt").write_text("ahead\n")
+    _git(cwd=destination, args=["add", "ahead.txt"])
+    _git(cwd=destination, args=["commit", "-m", "ahead commit"])
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-ahead",
+            metadata_manager=manager,
+        )
+
+    assert exc_info.value.code == "workspace-ahead"
 
 
 @pytest.mark.integration

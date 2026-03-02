@@ -1,11 +1,19 @@
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+from typing import Literal
 
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, repo_root
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.plan_output import DryRunPlan, PlanAction, render_human_plan, render_json_plan
+
+DeleteBlockReason = Literal[
+    "current-workspace",
+    "workspace-dirty",
+    "no-upstream",
+    "ahead-of-upstream",
+]
 
 
 def current_branch(*, cwd: Path) -> str | None:
@@ -25,11 +33,11 @@ def current_branch(*, cwd: Path) -> str | None:
     return branch
 
 
-def delete_block_reason(*, current: str | None, target: str, force: bool) -> str | None:
-    if force:
-        return None
+def delete_block_reason(*, current: str | None, target: str, force: bool) -> DeleteBlockReason | None:
     if current == target:
         return "current-workspace"
+    if force:
+        return None
     return None
 
 
@@ -69,17 +77,14 @@ def delete_workspace(
             guidance=("run `gitcuttle list` to inspect tracked workspaces",),
         )
 
-    block_reason = delete_block_reason(
-        current=current_branch(cwd=cwd),
-        target=branch,
-        force=force,
-    )
-    if block_reason is not None:
+    current = current_branch(cwd=cwd)
+    block_reason = delete_block_reason(current=current, target=branch, force=force)
+    if block_reason == "current-workspace":
         raise AppError(
             code="delete-blocked",
             message="cannot delete the current workspace",
             details=branch,
-            guidance=("switch to a different branch or rerun with --force",),
+            guidance=("switch to a different branch and rerun",),
         )
 
     if not force and workspace.worktree_path.exists() and _worktree_has_uncommitted_changes(cwd=workspace.worktree_path):
@@ -89,6 +94,42 @@ def delete_workspace(
             details=str(workspace.worktree_path),
             guidance=("commit/stash changes or rerun with --force",),
         )
+
+    if not force and not dry_run:
+        upstream_ref = _workspace_upstream_ref(
+            tracked_remote=workspace.tracked_remote,
+            default_remote=repo.default_remote,
+            branch=workspace.branch,
+        )
+        if upstream_ref is None or not _ref_exists(repo_root=repo_root_dir, ref=f"refs/remotes/{upstream_ref}"):
+            raise AppError(
+                code="no-upstream",
+                message="workspace has no upstream branch configured",
+                details=workspace.branch,
+                guidance=(
+                    "set an upstream or rerun with --force",
+                    f"example: git push -u origin {workspace.branch}",
+                ),
+            )
+
+        ahead = _ahead_count(repo_root=repo_root_dir, local_branch=workspace.branch, upstream_ref=upstream_ref)
+        if ahead is None:
+            raise AppError(
+                code="no-upstream",
+                message="workspace has no upstream branch configured",
+                details=workspace.branch,
+                guidance=(
+                    "set an upstream or rerun with --force",
+                    f"example: git push -u origin {workspace.branch}",
+                ),
+            )
+        if ahead > 0:
+            raise AppError(
+                code="workspace-ahead",
+                message="workspace branch is ahead of upstream",
+                details=f"{workspace.branch} is ahead by {ahead} commit(s)",
+                guidance=("push commits or rerun with --force",),
+            )
 
     plan = _build_delete_plan(branch=branch, force=force, worktree_path=workspace.worktree_path)
     if dry_run:
@@ -122,6 +163,45 @@ def _build_delete_plan(*, branch: str, force: bool, worktree_path: Path) -> DryR
     )
     actions.append(PlanAction(op="untrack-workspace", target=branch))
     return DryRunPlan(command="delete", actions=tuple(actions))
+
+
+def _workspace_upstream_ref(*, tracked_remote: str | None, default_remote: str | None, branch: str) -> str | None:
+    remote_name = tracked_remote or default_remote
+    if remote_name is None:
+        return None
+    return f"{remote_name}/{branch}"
+
+
+def _ref_exists(*, repo_root: Path, ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", ref],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    return result.returncode == 0
+
+
+def _ahead_count(*, repo_root: Path, local_branch: str, upstream_ref: str) -> int | None:
+    result = subprocess.run(
+        ["git", "rev-list", "--left-right", "--count", f"{local_branch}...{upstream_ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+
+    parts = result.stdout.strip().split()
+    if len(parts) != 2:
+        return None
+
+    try:
+        return int(parts[0])
+    except ValueError:
+        return None
 
 
 def _worktree_has_uncommitted_changes(*, cwd: Path) -> bool:

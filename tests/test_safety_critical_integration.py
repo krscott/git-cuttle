@@ -201,7 +201,7 @@ def test_remote_status_no_upstream_reports_unknown(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_delete_force_override_allows_current_workspace(tmp_path: Path) -> None:
+def test_delete_force_does_not_override_current_workspace_block(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -214,4 +214,7 @@ def test_delete_force_override_allows_current_workspace(tmp_path: Path) -> None:
         delete_block_reason(current=active_branch, target="feature/current", force=False)
         == "current-workspace"
     )
-    assert delete_block_reason(current=active_branch, target="feature/current", force=True) is None
+    assert (
+        delete_block_reason(current=active_branch, target="feature/current", force=True)
+        == "current-workspace"
+    )

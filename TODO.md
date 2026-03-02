@@ -29,7 +29,7 @@ implementation work and user-visible automated test coverage.
   PR state presentation match `DESIGN.md` (including repo, dirty, and
   description fields).
 
-- [ ] [P0] Story: Deliver `gitcuttle delete` end-to-end with safety gates and plan
+- [x] [P0] Story: Deliver `gitcuttle delete` end-to-end with safety gates and plan
   output contracts.
   Include tracked-workspace validation, dirty/ahead/no-upstream blocking,
   current-workspace deletion protection, `--force`, `--dry-run`, and `--json`
