@@ -64,14 +64,17 @@ def test_transaction_rolls_back_mutations_on_failure(tmp_path: Path) -> None:
     txn_id = "txn-safety-rollback"
     transaction = Transaction(txn_id=txn_id)
 
+    def _create_backup_refs() -> None:
+        create_backup_refs_for_branches(
+            txn_id=txn_id,
+            branches=["feature/demo"],
+            cwd=repo,
+        )
+
     transaction.add_step(
         TransactionStep(
             name="backup-refs",
-            apply=lambda: create_backup_refs_for_branches(
-                txn_id=txn_id,
-                branches=["feature/demo"],
-                cwd=repo,
-            ),
+            apply=_create_backup_refs,
             rollback=lambda: remove_backup_refs(txn_id=txn_id, cwd=repo),
         )
     )
@@ -138,10 +141,13 @@ def test_transaction_rollback_failure_reports_partial_state(tmp_path: Path) -> N
 
     transaction = Transaction(txn_id="txn-safety-partial")
 
+    def _write_feature_file() -> None:
+        (repo / "feature.txt").write_text("feature\n")
+
     transaction.add_step(
         TransactionStep(
             name="apply-file-change",
-            apply=lambda: (repo / "feature.txt").write_text("feature\n"),
+            apply=_write_feature_file,
             rollback=lambda: (_ for _ in ()).throw(RuntimeError("cleanup failed")),
             recovery_commands=("rm -f feature.txt",),
         )
