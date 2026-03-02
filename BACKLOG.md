@@ -33,3 +33,11 @@ Nice-to-have improvements discovered during PR review.
 - [ ] Add reusable integration fixtures for repo/worktree parity scenarios to
   reduce duplication across command parity tests and make contract gaps cheaper
   to cover.
+
+- [ ] Add a matrix lint rule that flags user-visible command rows pointing only
+  at helper-level tests (no subprocess `gitcuttle` invocation), so compliance
+  claims stay tied to black-box behavior.
+
+- [ ] Add a lightweight CI guard that fails when PR checks are red but
+  `TODO.md` has no open P1 remediation story, to keep review follow-up tracking
+  aligned with merge blockers.
