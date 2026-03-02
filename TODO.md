@@ -11,7 +11,7 @@ implementation work and user-visible automated test coverage.
   masking the real command failure. Preserve stable error formatting while
   allowing normal exception traceback assignment and add regression coverage.
 
-- [ ] [P0] Story: Align delete dry-run integration expectations with DESIGN safety gates.
+- [x] [P0] Story: Align delete dry-run integration expectations with DESIGN safety gates.
   `DESIGN.md` requires delete to block when no upstream is configured unless
   `--force` is provided; current integration tests still expect successful
   dry-run output in no-upstream repos. Update integration fixtures/expectations

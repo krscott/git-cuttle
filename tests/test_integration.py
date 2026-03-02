@@ -115,8 +115,8 @@ def test_cli_per_command_invocation_paths(tmp_path: pathlib.Path) -> None:
         cwd=repo,
         env=env,
     )
-    assert delete_result.returncode == 0
-    assert "Dry-run plan for `delete`:" in delete_result.stdout
+    assert delete_result.returncode == 2
+    assert "error[no-upstream]" in delete_result.stderr
 
     prune_result = subprocess.run(
         ["gitcuttle", "prune", "--dry-run"],
@@ -171,11 +171,8 @@ def test_cli_json_invocation_paths(tmp_path: pathlib.Path) -> None:
     assert list_result.returncode == 0
     list_payload = json.loads(list_result.stdout)
     assert list_payload["workspaces"]
-    assert delete_result.returncode == 0
-    delete_payload = json.loads(delete_result.stdout)
-    assert delete_payload["command"] == "delete"
-    assert delete_payload["dry_run"] is True
-    assert delete_payload["action_count"] >= 1
+    assert delete_result.returncode == 2
+    assert "error[no-upstream]" in delete_result.stderr
     assert prune_result.returncode == 0
     prune_payload = json.loads(prune_result.stdout)
     assert prune_payload["command"] == "prune"
