@@ -5,7 +5,7 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Add black-box CLI coverage for `delete` tracked-state
+- [x] [P1] Story: Add black-box CLI coverage for `delete` tracked-state
   guidance paths.
   `DESIGN.md` requires `gitcuttle delete` to fail with actionable guidance when
   (a) deleting the currently checked-out workspace and (b) the target branch is

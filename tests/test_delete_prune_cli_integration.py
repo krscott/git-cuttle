@@ -291,3 +291,64 @@ def test_cli_prune_reports_branch_recovery_when_branch_restore_rollback_fails(
     assert "rollback failures:" in result.stderr
     assert "deterministic recovery commands:" in result.stderr
     assert f"git update-ref refs/heads/{branch} " in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_delete_blocks_current_workspace_with_actionable_guidance(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    new_result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/current", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    assert new_result.returncode == 0
+
+    workspace_path = pathlib.Path(new_result.stdout.strip())
+    result = subprocess.run(
+        ["gitcuttle", "delete", "feature/current"],
+        capture_output=True,
+        text=True,
+        cwd=workspace_path,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[delete-blocked]: cannot delete the current workspace" in result.stderr
+    assert "details: feature/current" in result.stderr
+    assert "hint: switch to a different branch and rerun" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_delete_rejects_untracked_workspace_with_manual_git_guidance(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        ["gitcuttle", "delete", "feature/not-tracked"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[workspace-not-tracked]: workspace is not tracked" in result.stderr
+    assert "details: feature/not-tracked" in result.stderr
+    assert "hint: run `git branch --list` to inspect local branches" in result.stderr
+    assert "hint: if needed, delete manually with `git branch -D <branch>`" in result.stderr
