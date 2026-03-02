@@ -56,8 +56,12 @@ In descending order, this project optimizes for:
 
 - Every tracked worktree record must be visible in `gitcuttle list`; inconsistent
   records are shown explicitly as orphan entries rather than silently skipped.
+- Tracked worktree metadata files are schema-validated on read; malformed files
+  fail the command with a user-facing `GitCuttleError` (no Python traceback).
 - `TrackedWorktree(kind="workspace")` is valid only while the corresponding
   workspace config exists and matches the same branch/workspace pair.
+- Deleting a tracked worktree path requires that metadata branch and on-disk
+  worktree branch match; mismatches fail safely instead of removing any path.
 - `gitcuttle delete --workspace-only` on a linked workspace/worktree pair keeps
   worktree tracking by converting the record to `kind="branch"` and clearing
   `workspace_name`.
