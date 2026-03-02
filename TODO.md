@@ -19,7 +19,7 @@
 - [x] Implement transactional operation framework for multi-branch/worktree changes.
 - [x] Implement git backup refs under `refs/gitcuttle/txn/<txn-id>/...` for touched branches.
 - [x] Implement full rollback for refs, worktrees, and metadata on failure.
-- [ ] Implement rollback-failure reporting with explicit partial-state output and deterministic recovery commands.
+- [x] Implement rollback-failure reporting with explicit partial-state output and deterministic recovery commands.
 - [x] Enforce clean-operation policy (no merge/rebase/cherry-pick conflicts accepted).
 
 ## Repository Context and Tracking

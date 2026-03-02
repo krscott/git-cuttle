@@ -136,6 +136,8 @@ Implemented behavior:
 - `TransactionExecutionError` when execution fails but rollback completes
 - `TransactionRollbackError` when rollback is partial, including per-step
   rollback failure details
+- explicit partial-state reporting via `TransactionRollbackError.format_partial_state()`
+  including deterministic, de-duplicated manual recovery commands
 - helper `run_transaction(...)` for one-shot execution with explicit or
   generated transaction ids
 - git operation helpers now support transaction rollback primitives for:

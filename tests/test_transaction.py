@@ -13,6 +13,7 @@ from git_cuttle.git_ops import (
 )
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.transaction import (
+    RollbackFailure,
     Transaction,
     TransactionExecutionError,
     TransactionRollbackError,
@@ -100,6 +101,10 @@ def test_transaction_raises_rollback_error_when_rollback_fails() -> None:
             name="create-branch",
             apply=create_branch,
             rollback=rollback_branch,
+            recovery_commands=(
+                "git branch -f feature/demo refs/gitcuttle/txn/txn-3/heads/feature/demo",
+                "git worktree remove --force /tmp/feature-demo-wt",
+            ),
         )
     )
     transaction.add_step(
@@ -120,7 +125,60 @@ def test_transaction_raises_rollback_error_when_rollback_fails() -> None:
     ]
     assert len(exc_info.value.rollback_failures) == 1
     assert exc_info.value.rollback_failures[0].step_name == "create-branch"
+    assert exc_info.value.rollback_failures[0].recovery_commands == (
+        "git branch -f feature/demo refs/gitcuttle/txn/txn-3/heads/feature/demo",
+        "git worktree remove --force /tmp/feature-demo-wt",
+    )
     assert exc_info.value.rolled_back_steps == ()
+
+    assert exc_info.value.recovery_commands() == (
+        "git branch -f feature/demo refs/gitcuttle/txn/txn-3/heads/feature/demo",
+        "git worktree remove --force /tmp/feature-demo-wt",
+    )
+    assert exc_info.value.format_partial_state() == (
+        "transaction id: txn-3\n"
+        "failed step: create-worktree\n"
+        "operation error: worktree add failed\n"
+        "rolled back steps: (none)\n"
+        "rollback failures:\n"
+        "- create-branch: branch delete failed\n"
+        "deterministic recovery commands:\n"
+        "- git branch -f feature/demo refs/gitcuttle/txn/txn-3/heads/feature/demo\n"
+        "- git worktree remove --force /tmp/feature-demo-wt"
+    )
+
+
+def test_rollback_error_deduplicates_recovery_commands_in_order() -> None:
+    error = TransactionRollbackError(
+        txn_id="txn-dedupe",
+        failed_step_name="apply-merge",
+        cause=RuntimeError("merge failed"),
+        rollback_failures=(
+            RollbackFailure(
+                step_name="restore-ref",
+                error=RuntimeError("restore failed"),
+                recovery_commands=(
+                    "git update-ref refs/heads/feature abc123",
+                    "git worktree prune",
+                ),
+            ),
+            RollbackFailure(
+                step_name="remove-worktree",
+                error=RuntimeError("remove failed"),
+                recovery_commands=(
+                    "git worktree prune",
+                    "git worktree remove --force /tmp/feature",
+                ),
+            ),
+        ),
+        rolled_back_steps=("write-metadata",),
+    )
+
+    assert error.recovery_commands() == (
+        "git update-ref refs/heads/feature abc123",
+        "git worktree prune",
+        "git worktree remove --force /tmp/feature",
+    )
 
 
 def test_run_transaction_returns_effective_transaction_id() -> None:

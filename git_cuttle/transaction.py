@@ -9,6 +9,7 @@ class TransactionStep:
     name: str
     apply: "StepFn"
     rollback: "StepFn"
+    recovery_commands: tuple[str, ...] = ()
 
 
 StepFn = Callable[[], None]
@@ -18,6 +19,7 @@ StepFn = Callable[[], None]
 class RollbackFailure:
     step_name: str
     error: Exception
+    recovery_commands: tuple[str, ...] = ()
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -41,6 +43,37 @@ class TransactionRollbackError(RuntimeError):
     cause: Exception
     rollback_failures: tuple[RollbackFailure, ...]
     rolled_back_steps: tuple[str, ...]
+
+    def recovery_commands(self) -> tuple[str, ...]:
+        commands: list[str] = []
+        seen: set[str] = set()
+        for failure in self.rollback_failures:
+            for command in failure.recovery_commands:
+                if command in seen:
+                    continue
+                commands.append(command)
+                seen.add(command)
+        return tuple(commands)
+
+    def format_partial_state(self) -> str:
+        rolled_back = ", ".join(self.rolled_back_steps) if self.rolled_back_steps else "(none)"
+        lines = [
+            f"transaction id: {self.txn_id}",
+            f"failed step: {self.failed_step_name}",
+            f"operation error: {self.cause}",
+            f"rolled back steps: {rolled_back}",
+            "rollback failures:",
+        ]
+        for failure in self.rollback_failures:
+            lines.append(f"- {failure.step_name}: {failure.error}")
+
+        recovery_commands = self.recovery_commands()
+        if recovery_commands:
+            lines.append("deterministic recovery commands:")
+            lines.extend(f"- {command}" for command in recovery_commands)
+        else:
+            lines.append("deterministic recovery commands: (none provided)")
+        return "\n".join(lines)
 
     def __str__(self) -> str:
         failed_rollbacks = ", ".join(
@@ -86,6 +119,7 @@ class Transaction:
                             RollbackFailure(
                                 step_name=completed_step.name,
                                 error=rollback_error,
+                                recovery_commands=completed_step.recovery_commands,
                             )
                         )
 
