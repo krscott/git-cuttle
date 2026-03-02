@@ -16,18 +16,21 @@ def resolve_base_ref(*, cwd: Path, base_ref: str | None) -> str:
                 code="invalid-base-ref",
                 message="base ref does not exist",
                 details=base_ref,
-                guidance=("pass a valid local branch, tag, or commit",),
+                guidance=(
+                    "pass a valid local branch, tag, or commit",
+                    "or run `gitcuttle new -b <name>` to base from the current commit",
+                ),
             )
         return base_ref
 
-    current_branch_name = _current_branch(cwd=cwd)
-    if current_branch_name is None:
+    current_commit = _rev_parse(cwd=cwd, ref="HEAD")
+    if current_commit is None:
         raise AppError(
-            code="detached-head",
-            message="cannot infer base ref while HEAD is detached",
-            guidance=("pass --base <ref> explicitly",),
+            code="base-resolve-failed",
+            message="failed to resolve current commit for default base",
+            guidance=("pass an explicit base ref as `gitcuttle new <base> -b <name>`",),
         )
-    return current_branch_name
+    return current_commit
 
 
 def create_standard_workspace(
@@ -57,7 +60,11 @@ def create_standard_workspace(
             guidance=("rerun the command to retry auto-tracking",),
         )
 
-    if _local_branch_exists(cwd=repo_root_dir, branch=branch):
+    if _branch_exists(
+        cwd=repo_root_dir,
+        branch=branch,
+        remote=repo.default_remote,
+    ):
         raise AppError(
             code="branch-already-exists",
             message="target branch already exists",
@@ -127,7 +134,11 @@ def create_octopus_workspace(
             guidance=("rerun the command to retry auto-tracking",),
         )
 
-    if _local_branch_exists(cwd=repo_root_dir, branch=branch):
+    if _branch_exists(
+        cwd=repo_root_dir,
+        branch=branch,
+        remote=repo.default_remote,
+    ):
         raise AppError(
             code="branch-already-exists",
             message="target branch already exists",
@@ -173,22 +184,6 @@ def _utc_now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _current_branch(*, cwd: Path) -> str | None:
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cwd,
-    )
-    if result.returncode != 0:
-        return None
-    branch = result.stdout.strip()
-    if branch == "" or branch == "HEAD":
-        return None
-    return branch
-
-
 def _rev_parse(*, cwd: Path, ref: str) -> str | None:
     result = subprocess.run(
         ["git", "rev-parse", "--verify", ref],
@@ -211,6 +206,35 @@ def _local_branch_exists(*, cwd: Path, branch: str) -> bool:
         cwd=cwd,
     )
     return result.returncode == 0
+
+
+def _remote_branch_exists(*, cwd: Path, branch: str, remote: str) -> bool:
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", "--heads", remote, f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 2:
+        return False
+
+    raise AppError(
+        code="remote-branch-check-failed",
+        message="failed to verify whether branch exists on remote",
+        details=result.stderr.strip() or result.stdout.strip() or f"{remote}/{branch}",
+        guidance=("retry after confirming remote connectivity",),
+    )
+
+
+def _branch_exists(*, cwd: Path, branch: str, remote: str | None) -> bool:
+    if _local_branch_exists(cwd=cwd, branch=branch):
+        return True
+    if remote is None:
+        return False
+    return _remote_branch_exists(cwd=cwd, branch=branch, remote=remote)
 
 
 def _create_branch(*, cwd: Path, branch: str, base_ref: str) -> None:

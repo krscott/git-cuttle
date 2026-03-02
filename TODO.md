@@ -12,7 +12,7 @@ implementation work and user-visible automated test coverage.
   validation, and per-command invocation paths. This must replace the current
   template greeting CLI behavior.
 
-- [ ] [P0] Story: Deliver `gitcuttle new` end-to-end for standard and octopus workspace
+- [x] [P0] Story: Deliver `gitcuttle new` end-to-end for standard and octopus workspace
   creation.
   Include base resolution rules, branch existence checks (local and upstream),
   deterministic destination path behavior, metadata persistence, and integration

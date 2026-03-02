@@ -46,7 +46,7 @@ def test_run_tracks_repo_for_mutating_command(tmp_path: pathlib.Path) -> None:
     _init_repo(repo)
     tracker = StubTracker()
 
-    run(Options(), cwd=repo, metadata_manager=tracker, command_name="new")
+    run(Options(branch="feature/demo"), cwd=repo, metadata_manager=tracker, command_name="delete")
 
     assert tracker.calls == [repo]
 

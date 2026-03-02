@@ -19,7 +19,8 @@ gitcuttle new -b feature/demo
 ```
 
 ```text
-new:invoked
+created workspace 'feature/readme' at /tmp/.../feature-readme
+hint: cd /tmp/.../feature-readme
 ```
 
 Path-only output for shell navigation helpers:
@@ -29,7 +30,7 @@ gitcuttle new -b feature/demo --destination
 ```
 
 ```text
-new:destination
+/tmp/.../feature-readme
 ```
 
 List invocation:

@@ -1,6 +1,7 @@
 """Validate README output snippets against real CLI behavior."""
 
 import pathlib
+import os
 import subprocess
 
 import pytest
@@ -24,16 +25,20 @@ def test_readme_new_command_invocation_output(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
     result = subprocess.run(
         ["gitcuttle", "new", "-b", "feature/readme"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
     )
 
     assert result.returncode == 0
-    assert result.stdout == "new:invoked\n"
+    assert "created workspace 'feature/readme' at" in result.stdout
+    assert "hint: cd" in result.stdout
     assert result.stderr == ""
 
 
@@ -42,16 +47,19 @@ def test_readme_destination_output_for_new(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
     result = subprocess.run(
         ["gitcuttle", "new", "-b", "feature/readme", "--destination"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
     )
 
     assert result.returncode == 0
-    assert result.stdout.strip() == "new:destination"
+    assert pathlib.Path(result.stdout.strip()).is_dir()
     assert result.stderr == ""
 
 

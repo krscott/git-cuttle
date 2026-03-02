@@ -28,15 +28,20 @@ def _init_repo(path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_resolve_base_ref_defaults_to_current_branch(tmp_path: Path) -> None:
+def test_resolve_base_ref_defaults_to_current_commit(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
     _git(cwd=repo, args=["checkout", "-b", "feature/base"])
+    (repo / "feature.txt").write_text("feature\n")
+    _git(cwd=repo, args=["add", "feature.txt"])
+    _git(cwd=repo, args=["commit", "-m", "feature commit"])
+
+    expected_commit = _git(cwd=repo, args=["rev-parse", "--verify", "HEAD"]).stdout.strip()
 
     resolved = resolve_base_ref(cwd=repo, base_ref=None)
 
-    assert resolved == "feature/base"
+    assert resolved == expected_commit
 
 
 @pytest.mark.integration
@@ -85,6 +90,39 @@ def test_create_standard_workspace_rejects_existing_branch(tmp_path: Path) -> No
         create_standard_workspace(
             cwd=repo,
             branch="feature/existing",
+            base_ref="main",
+            metadata_manager=metadata_manager,
+        )
+
+    assert exc_info.value.code == "branch-already-exists"
+    assert exc_info.value.message == "target branch already exists"
+
+
+@pytest.mark.integration
+def test_create_standard_workspace_rejects_branch_existing_on_upstream(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _git(cwd=tmp_path, args=["init", "--bare", str(remote)])
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _init_repo(source)
+    _git(cwd=source, args=["remote", "add", "origin", str(remote)])
+    _git(cwd=source, args=["push", "-u", "origin", "main"])
+    _git(cwd=source, args=["checkout", "-b", "feature/upstream-only"])
+    _git(cwd=source, args=["push", "-u", "origin", "feature/upstream-only"])
+
+    repo = tmp_path / "repo"
+    _git(cwd=tmp_path, args=["clone", str(remote), str(repo)])
+    _git(cwd=repo, args=["config", "user.name", "Test User"])
+    _git(cwd=repo, args=["config", "user.email", "test@example.com"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    metadata_manager = MetadataManager(path=metadata_path)
+
+    with pytest.raises(AppError) as exc_info:
+        create_standard_workspace(
+            cwd=repo,
+            branch="feature/upstream-only",
             base_ref="main",
             metadata_manager=metadata_manager,
         )

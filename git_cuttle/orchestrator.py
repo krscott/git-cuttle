@@ -7,6 +7,7 @@ from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, in_git_repo, in_progress_operation, repo_root
 from git_cuttle.lib import Options
 from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata
+from git_cuttle.new import create_octopus_workspace, create_standard_workspace
 from git_cuttle.update import update_non_octopus_workspace, update_octopus_workspace
 
 
@@ -70,7 +71,8 @@ def _dispatch_command(
     metadata_manager: RepoTracker,
 ) -> None:
     if command_name == "new":
-        _run_new(opts=opts)
+        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        _run_new(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "list":
         _run_list(opts=opts)
@@ -98,11 +100,35 @@ def _dispatch_command(
     )
 
 
-def _run_new(*, opts: Options) -> None:
+def _run_new(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
+    if opts.branch is None:
+        raise AppError(
+            code="invalid-arguments",
+            message="new command requires a branch name",
+            guidance=("pass `-b <branch>` when creating a workspace",),
+        )
+
+    if opts.parent_refs:
+        destination = create_octopus_workspace(
+            cwd=cwd,
+            branch=opts.branch,
+            parent_refs=list(opts.parent_refs),
+            metadata_manager=metadata_manager,
+        )
+    else:
+        destination = create_standard_workspace(
+            cwd=cwd,
+            branch=opts.branch,
+            base_ref=opts.base_ref,
+            metadata_manager=metadata_manager,
+        )
+
     if opts.destination:
-        print("new:destination")
+        print(destination)
         return
-    print("new:invoked")
+
+    print(f"created workspace '{opts.branch}' at {destination}")
+    print(f"hint: cd {destination}")
 
 
 def _run_list(*, opts: Options) -> None:

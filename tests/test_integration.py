@@ -1,6 +1,7 @@
 """Black-box integration tests for CLI subcommand architecture."""
 
 import pathlib
+import os
 import subprocess
 
 import pytest
@@ -51,24 +52,31 @@ def test_cli_new_and_destination_invocation_paths(tmp_path: pathlib.Path) -> Non
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
 
-    invoked = subprocess.run(
-        ["gitcuttle", "new", "-b", "feature/demo"],
-        capture_output=True,
-        text=True,
-        cwd=repo,
-    )
     destination = subprocess.run(
         ["gitcuttle", "new", "-b", "feature/demo", "--destination"],
         capture_output=True,
         text=True,
         cwd=repo,
+        env=env,
+    )
+    invoked = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/demo-2"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
     )
 
-    assert invoked.returncode == 0
-    assert invoked.stdout == "new:invoked\n"
     assert destination.returncode == 0
-    assert destination.stdout == "new:destination\n"
+    destination_path = pathlib.Path(destination.stdout.strip())
+    assert destination_path.is_dir()
+
+    assert invoked.returncode == 0
+    assert "created workspace 'feature/demo-2' at" in invoked.stdout
+    assert "hint: cd" in invoked.stdout
 
 
 @pytest.mark.integration
