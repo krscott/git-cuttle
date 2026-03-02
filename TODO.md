@@ -134,7 +134,7 @@ implementation work and user-visible automated test coverage.
   that parent has an upstream configured; otherwise use local tip. Add
   integration tests for upstream-present and upstream-absent cases.
 
-- [ ] [P0] Story: Restore transactional atomicity guarantees across mutating commands.
+- [x] [P0] Story: Restore transactional atomicity guarantees across mutating commands.
   Re-wire `new`, `delete`, `prune`, `update`, and `absorb` through shared
   transaction steps so multi-branch/worktree mutations roll back fully on
   failure. Enforce DESIGN's minimum contract: create backup refs under
