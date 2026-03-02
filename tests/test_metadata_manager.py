@@ -76,6 +76,44 @@ def test_write_and_read_round_trip(tmp_path: Path) -> None:
     assert actual == expected
 
 
+def test_write_failure_does_not_clobber_existing_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = MetadataManager(path=tmp_path / "meta" / "workspaces.json")
+    original = _metadata()
+    manager.write(original)
+
+    updated = WorkspacesMetadata(
+        version=SCHEMA_VERSION,
+        repos={
+            "/repos/demo/.git": RepoMetadata(
+                git_dir=Path("/repos/demo/.git"),
+                repo_root=Path("/repos/demo"),
+                default_remote="origin",
+                tracked_at="2026-03-01T00:00:00+00:00",
+                updated_at="2026-03-02T00:00:00+00:00",
+                workspaces={
+                    "feature/a": _workspace(
+                        branch="feature/a", path="/wt/feature-a", kind="standard"
+                    )
+                },
+            )
+        },
+    )
+
+    def broken_replace(_src: str | Path, _dst: str | Path) -> None:
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr("git_cuttle.metadata_manager.os.replace", broken_replace)
+
+    with pytest.raises(OSError, match="simulated replace failure"):
+        manager.write(updated)
+
+    assert manager.read() == original
+    temp_files = list((tmp_path / "meta").glob("*.tmp"))
+    assert temp_files == []
+
+
 def test_write_validates_repo_key_matches_git_dir(tmp_path: Path) -> None:
     manager = MetadataManager(path=tmp_path / "workspaces.json")
 

@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -64,7 +65,45 @@ class MetadataManager:
     def write(self, metadata: WorkspacesMetadata) -> None:
         _validate_workspaces_metadata(metadata)
         self.ensure_parent_dir()
-        self.path.write_text(json.dumps(_serialize_workspaces_metadata(metadata), indent=2))
+        serialized = json.dumps(_serialize_workspaces_metadata(metadata), indent=2)
+        _atomic_write_text(self.path, serialized)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    parent = path.parent
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+
+        os.replace(temp_path, path)
+        _fsync_directory(parent)
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+
+
+def _fsync_directory(path: Path) -> None:
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    fd = os.open(path, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _parse_workspaces_metadata(raw: object) -> WorkspacesMetadata:
