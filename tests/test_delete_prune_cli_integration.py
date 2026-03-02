@@ -218,8 +218,7 @@ def test_cli_delete_reports_branch_recovery_when_branch_restore_rollback_fails(
     assert result.returncode == 2
     assert "rollback failures:" in result.stderr
     assert "deterministic recovery commands:" in result.stderr
-    assert f"git update-ref refs/heads/{branch} refs/gitcuttle/txn/" in result.stderr
-    assert f"/heads/{branch}" in result.stderr
+    assert f"git update-ref refs/heads/{branch} " in result.stderr
 
 
 @pytest.mark.integration
@@ -281,5 +280,4 @@ def test_cli_prune_reports_branch_recovery_when_branch_restore_rollback_fails(
     assert result.returncode == 2
     assert "rollback failures:" in result.stderr
     assert "deterministic recovery commands:" in result.stderr
-    assert f"git update-ref refs/heads/{branch} refs/gitcuttle/txn/" in result.stderr
-    assert f"/heads/{branch}" in result.stderr
+    assert f"git update-ref refs/heads/{branch} " in result.stderr

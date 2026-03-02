@@ -7,6 +7,7 @@ from git_cuttle.git_ops import (
     create_backup_refs_for_branches,
     remove_backup_refs,
     restore_branch_from_backup_ref,
+    set_branch_head,
 )
 from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionStep
 
@@ -66,10 +67,12 @@ def restore_branch_step(
     branch: str,
     rollback_error_code: str,
     rollback_error_message: str,
+    backup_oid: str | None = None,
 ) -> TransactionStep:
     recovery_commands = branch_restore_recovery_commands(
         transaction=transaction,
         branch=branch,
+        backup_oid=backup_oid,
     )
     return TransactionStep(
         name=f"restore-branch:{branch}",
@@ -78,6 +81,7 @@ def restore_branch_step(
             repo_root=repo_root,
             txn_id=transaction.txn_id,
             branch=branch,
+            backup_oid=backup_oid,
             error_code=rollback_error_code,
             error_message=rollback_error_message,
         ),
@@ -89,7 +93,11 @@ def branch_restore_recovery_commands(
     *,
     transaction: Transaction,
     branch: str,
+    backup_oid: str | None = None,
 ) -> tuple[str, ...]:
+    if backup_oid is not None:
+        return (f"git update-ref refs/heads/{branch} {backup_oid}",)
+
     backup_ref = backup_ref_for_branch(txn_id=transaction.txn_id, branch=branch)
     return (f"git update-ref refs/heads/{branch} {backup_ref}",)
 
@@ -156,6 +164,7 @@ def rollback_restore_branch(
     repo_root: Path,
     transaction: Transaction,
     branch: str,
+    backup_oid: str | None = None,
     error_code: str,
     message: str,
 ) -> None:
@@ -163,6 +172,7 @@ def rollback_restore_branch(
         repo_root=repo_root,
         txn_id=transaction.txn_id,
         branch=branch,
+        backup_oid=backup_oid,
         error_code=error_code,
         error_message=message,
     )
@@ -204,11 +214,15 @@ def _restore_branch_from_backup_ref(
     repo_root: Path,
     txn_id: str,
     branch: str,
+    backup_oid: str | None,
     error_code: str,
     error_message: str,
 ) -> None:
     try:
-        restore_branch_from_backup_ref(txn_id=txn_id, branch=branch, cwd=repo_root)
+        if backup_oid is None:
+            restore_branch_from_backup_ref(txn_id=txn_id, branch=branch, cwd=repo_root)
+        else:
+            set_branch_head(branch=branch, oid=backup_oid, cwd=repo_root)
     except RuntimeError as error:
         raise AppError(code=error_code, message=error_message, details=str(error)) from error
 

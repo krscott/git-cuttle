@@ -21,7 +21,7 @@ from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_transaction import (
     backup_refs_step,
     branch_restore_recovery_commands,
-    cleanup_backup_refs_post_commit,
+    cleanup_backup_refs_step,
     rollback_restore_branch,
     run_command_transaction,
 )
@@ -190,6 +190,17 @@ def prune_workspaces(
                 )
             )
 
+    if backup_branches:
+        transaction.add_step(
+            cleanup_backup_refs_step(
+                repo_root=repo_root_dir,
+                transaction=transaction,
+                branches=backup_branches,
+                cleanup_error_code="prune-cleanup-failed",
+                cleanup_error_message="failed to cleanup transactional backup refs for prune",
+            )
+        )
+
     transaction.add_step(
         TransactionStep(
             name="write-metadata",
@@ -201,13 +212,6 @@ def prune_workspaces(
         transaction=transaction,
         code="prune-failed",
         message="failed to prune workspaces",
-    )
-    cleanup_backup_refs_post_commit(
-        repo_root=repo_root_dir,
-        transaction=transaction,
-        branches=backup_branches,
-        cleanup_error_code="prune-cleanup-failed",
-        cleanup_error_message="failed to cleanup transactional backup refs for prune",
     )
     return None
 
@@ -561,6 +565,7 @@ def _delete_branch_step(
     decision: PruneDecision,
     force: bool,
 ) -> TransactionStep:
+    branch_oid = _branch_head_oid(repo_root=repo_root, branch=decision.branch)
     return TransactionStep(
         name=f"delete-branch:{decision.branch}",
         apply=lambda: _delete_local_branch(
@@ -572,11 +577,26 @@ def _delete_branch_step(
             repo_root=repo_root,
             transaction=transaction,
             branch=decision.branch,
+            backup_oid=branch_oid,
             error_code="prune-rollback-failed",
             message="failed to restore pruned branch from backup ref",
         ),
         recovery_commands=branch_restore_recovery_commands(
             transaction=transaction,
             branch=decision.branch,
+            backup_oid=branch_oid,
         ),
     )
+
+
+def _branch_head_oid(*, repo_root: Path, branch: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()

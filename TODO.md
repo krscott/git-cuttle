@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Ensure metadata write is truly last in delete/prune success paths.
+- [x] [P1] Story: Ensure metadata write is truly last in delete/prune success paths.
   `DESIGN.md` minimum rollback contract says metadata writes MUST be last after
   git ref/worktree mutations. `git_cuttle/delete.py` and `git_cuttle/prune.py`
   still call `cleanup_backup_refs_post_commit` after `write-metadata`, which

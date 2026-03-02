@@ -17,7 +17,7 @@ from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_transaction import (
     backup_refs_step,
     branch_restore_recovery_commands,
-    cleanup_backup_refs_post_commit,
+    cleanup_backup_refs_step,
     rollback_restore_branch,
     run_command_transaction,
 )
@@ -204,6 +204,7 @@ def delete_workspace(
                 ),
             )
         )
+    branch_oid = _branch_head_oid(repo_root=repo_root_dir, branch=branch)
     transaction.add_step(
         TransactionStep(
             name=f"delete-branch:{branch}",
@@ -216,13 +217,24 @@ def delete_workspace(
                 repo_root=repo_root_dir,
                 transaction=transaction,
                 branch=branch,
+                backup_oid=branch_oid,
                 error_code="delete-rollback-failed",
                 message="failed to restore deleted branch from backup ref",
             ),
             recovery_commands=branch_restore_recovery_commands(
                 transaction=transaction,
                 branch=branch,
+                backup_oid=branch_oid,
             ),
+        )
+    )
+    transaction.add_step(
+        cleanup_backup_refs_step(
+            repo_root=repo_root_dir,
+            transaction=transaction,
+            branches=(branch,),
+            cleanup_error_code="delete-cleanup-failed",
+            cleanup_error_message="failed to cleanup transactional backup refs for delete",
         )
     )
     transaction.add_step(
@@ -236,13 +248,6 @@ def delete_workspace(
         transaction=transaction,
         code="delete-workspace-failed",
         message="failed to delete workspace",
-    )
-    cleanup_backup_refs_post_commit(
-        repo_root=repo_root_dir,
-        transaction=transaction,
-        branches=(branch,),
-        cleanup_error_code="delete-cleanup-failed",
-        cleanup_error_message="failed to cleanup transactional backup refs for delete",
     )
     return None
 
@@ -356,6 +361,19 @@ def _delete_local_branch(*, repo_root: Path, branch: str, force: bool) -> None:
             message="failed to delete workspace branch",
             details=result.stderr.strip() or branch,
         )
+
+
+def _branch_head_oid(*, repo_root: Path, branch: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
 
 
 def _restore_worktree(*, repo_root: Path, branch: str, worktree_path: Path) -> None:
