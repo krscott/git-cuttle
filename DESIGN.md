@@ -9,17 +9,22 @@ and reproducing the system's functionality.
 `git-cuttle` is a Command Line Interface (CLI) application for managing git
 multi-branch workflows.
 
+## Normative Language
+
+The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` in this
+document are to be interpreted as described in RFC 2119.
+
 ## Design Methodology
 
 In descending order, this project optimizes for:
 
-1. Correctness - ops shall result in a good state
-2. Reliability - ops should be reproducible
-3. User-friendly - ops should have a minimal interface and useful error messages
-4. Speed - ops should be efficient
+1. Correctness - ops MUST result in a good state
+2. Reliability - ops SHOULD be reproducible
+3. User-friendly - ops SHOULD have a minimal interface and useful error messages
+4. Speed - ops SHOULD be efficient
 
-User-visible requirements listed in this document shall have corresponding
-integration tests. Wherever possible, tests should be implemented first
+User-visible requirements listed in this document MUST have corresponding
+integration tests. Wherever possible, tests SHOULD be implemented first
 (Red-Green-Refactor).
 
 ## Architecture
@@ -33,22 +38,22 @@ The application is divided into distinct modules
 
 ## Persistent Data
 
-All user data is stored in `$XDG_DATA_HOME/gitcuttle/workspaces.json`.
+All user data MUST be stored in `$XDG_DATA_HOME/gitcuttle/workspaces.json`.
 
-The schema shall be versioned with a `"version": int` key.
+The schema MUST be versioned with a `"version": int` key.
 
-When the schema version changes, the app shall auto-migrate data to the latest
+When the schema version changes, the app MUST auto-migrate data to the latest
 version and create a timestamped backup before writing.
 
-Backups shall be written before migration as:
+Backups MUST be written before migration as:
 `$XDG_DATA_HOME/gitcuttle/workspaces.json.bak.<unix-timestamp>`.
 
-This data may become outdated between invocations, so must be updated before
+This data MAY become outdated between invocations, so it MUST be updated before
 making filesystem changes.
 
 ### `workspaces.json` schema
 
-`workspaces.json` shall have this structure:
+`workspaces.json` MUST have this structure:
 
 ```json
 {
@@ -79,31 +84,31 @@ making filesystem changes.
 
 Schema invariants:
 
-- The canonical repo identity key is the realpath of the git directory
+- The canonical repo identity key MUST be the realpath of the git directory
   (`<git_dir_realpath>`).
-- `repos[<git_dir_realpath>].git_dir` must match the map key exactly.
-- `default_remote` and `tracked_remote` may be `null` when no remote context is
+- `repos[<git_dir_realpath>].git_dir` MUST match the map key exactly.
+- `default_remote` and `tracked_remote` MAY be `null` when no remote context is
   configured.
-- Workspace map keys are branch names and must match
+- Workspace map keys are branch names and MUST match
   `workspaces[...].branch` exactly.
-- `worktree_path` must be unique within a repo.
-- `kind=standard` requires `octopus_parents=[]`.
-- `kind=octopus` requires `octopus_parents` with at least two branches.
-- Octopus parent order is significant and must be preserved exactly as entered.
+- `worktree_path` MUST be unique within a repo.
+- `kind=standard` MUST have `octopus_parents=[]`.
+- `kind=octopus` MUST have `octopus_parents` with at least two branches.
+- Octopus parent order is significant and MUST be preserved exactly as entered.
 - Branch names are stored unsanitized in metadata. Any sanitized filesystem
   directory naming is derived and not used as identity.
 
 ### Status cache
 
-`list` shall use a short TTL cache (default: 60 seconds) for remote/PR status.
-Cache refresh must never create new repo tracking entries.
+`list` MUST use a short TTL cache (default: 60 seconds) for remote/PR status.
+Cache refresh MUST NOT create new repo tracking entries.
 
 ## Command Scope and Tracking
 
-- Mutating commands (`new`, `delete`, `prune`, `update`, `absorb`) shall ensure
+- Mutating commands (`new`, `delete`, `prune`, `update`, `absorb`) MUST ensure
   the current repo is tracked in `workspaces.json`.
-- Read-only commands (for example, `list`) shall not create tracking entries.
-- If `gitcuttle` is run outside a git repo, it shall exit with a clear error and
+- Read-only commands (for example, `list`) MUST NOT create tracking entries.
+- If `gitcuttle` is run outside a git repo, it MUST exit with a clear error and
   guidance to run from within a git repository.
 
 ## Definitions
@@ -114,25 +119,27 @@ Cache refresh must never create new repo tracking entries.
 ## Changing Directory
 
 It is not possible to `cd` from python. For commands that "change directory":
-- Never change the user's shell directory from within `gitcuttle`.
-- By default, output instructions for changing directory or setting up an alias
-- Accept a `--destination` flag, output only the directory to stdout, to be
-  used by user aliases or bash functions
+- Commands MUST NOT change the user's shell directory from within `gitcuttle`.
+- By default, commands MUST output instructions for changing directory or
+  setting up an alias
+- Commands MUST accept a `--destination` flag and output only the directory to
+  stdout for use by user aliases or shell functions
 
-`--destination` is a shared convention for any current or future command that
-conceptually navigates the user to a workspace path.
+`--destination` MUST be a shared convention for any current or future command
+that conceptually navigates the user to a workspace path.
 
 ## Merge strategy
 
-Only allow clean merge/rebase/cherry-pick. If an operation results in a git
-conflict, show an error message with a suggestion on how to get git into a
-state that would allow the operation.
+Commands MUST only perform clean merge/rebase/cherry-pick operations. If an
+operation results in a git conflict, the command MUST show an error message
+with a suggestion on how to get git into a state that would allow the
+operation.
 
-Operations that touch multiple branches/worktrees must be atomic. If a failure
+Operations that touch multiple branches/worktrees MUST be atomic. If a failure
 occurs, roll back all touched branches, worktrees, and metadata to their
 pre-command state.
 
-If rollback itself fails, exit non-zero and print:
+If rollback itself fails, commands MUST exit non-zero and MUST print:
 
 - The exact partial state that remains
 - Deterministic recovery commands the user can run to restore consistency
@@ -141,9 +148,9 @@ If rollback itself fails, exit non-zero and print:
 
 In all cases, when a command is executed:
 
-- Commands should work the same regardless if run from original repo dir
+- Commands MUST work the same regardless if run from original repo dir
   or from worktree dir
-- All short flags should also have long flags (e.g. `-b,--branch`)
+- All short flags SHOULD also have long flags (e.g. `-b,--branch`)
 
 ### Creating a new branch and worktree
 
@@ -151,18 +158,23 @@ In all cases, when a command is executed:
 $ gitcuttle new [BRANCH] [-b NAME]
 ```
 
-- Creates a new branch and worktree in `$XDG_DATA_HOME/gitcuttle/<repo>/<branch>`
-- `BRANCH` is the base branch/commit. If not provided, use current commit as the base
+- The command MUST create a new branch and worktree in
+  `$XDG_DATA_HOME/gitcuttle/<repo>/<branch>`
+- `BRANCH` is the base branch/commit. If not provided, the command MUST use the
+  current commit as the base
 - `-b, --branch NAME` is the new branch name to create
-- If BRANCH is given but does not exist, show an error message, suggest 
-  `new -b NAME` (no BRANCH)
-- Branch name is provided with `-b NAME` or generated using a random inverse 
-  hex (e.g. `workspace-zyxwvut`)
-  - If given branch name contains `/`, it should be sanitized in the dir name,
-    but kept in the git branch name. The sanitization mapping must be stable.
-- If branch already exists locally or on its tracked remote, then show an error message
-- If no tracked remote/upstream context exists, branch-exists checks are local-only
-- Print destination path/instructions; do not attempt to change the caller's cwd
+- If BRANCH is given but does not exist, commands MUST show an error and
+  suggest `new -b NAME` (no BRANCH)
+- Branch name MUST be provided with `-b NAME` or generated using a random
+  inverse hex (e.g. `workspace-zyxwvut`)
+  - If given branch name contains `/`, it MUST be sanitized in the dir name,
+    but kept in the git branch name. The sanitization mapping MUST be stable.
+- If branch already exists locally or on its tracked remote, commands MUST show
+  an error message
+- If no tracked remote/upstream context exists, branch-exists checks MUST be
+  local-only
+- Commands MUST print destination path/instructions and MUST NOT attempt to
+  change the caller's cwd
 
 #### Creating an octopus branch
 
@@ -170,10 +182,10 @@ $ gitcuttle new [BRANCH] [-b NAME]
 $ gitcuttle new BRANCH [BRANCH...] [-b NAME]
 ```
 
-- Create a new workspace and branch that is an n-way (octopus) merge with
-  given branches
-- Track all bases in `workspaces.json`
-- Preserve and persist parent branch order exactly as provided
+- The command MUST create a new workspace and branch that is an n-way (octopus)
+  merge with the given branches
+- The command MUST track all bases in `workspaces.json`
+- The command MUST preserve and persist parent branch order exactly as provided
 
 ### List workspaces
 
@@ -190,7 +202,7 @@ Table of tracked workspaces (leave blank if n/a)
 - description (PR title or last commit)
 
 If remote/PR status cannot be fetched (offline, auth, unsupported remote),
-show unknown/blank markers and continue.
+commands MUST show unknown/blank markers and continue.
 
 ### Delete workspace
 
@@ -198,15 +210,15 @@ show unknown/blank markers and continue.
 $ gitcuttle delete BRANCH [--dry-run] [--json] [--force]
 ```
 
-- Delete the tracked BRANCH workspace (worktree and branch)
-- If BRANCH is not a tracked workspace show an error message with a suggestion
-  to delete using git cli
-- If workspace is dirty or branch is ahead of remote, block deletion unless
-  `--force` is provided
-- `--force` may proceed even when no upstream is configured
-- If BRANCH is the currently checked out workspace, error and suggest switching
-  to a safe workspace before deleting
-- `--dry-run --json` shall output a machine-readable plan without side effects
+- The command MUST delete the tracked BRANCH workspace (worktree and branch)
+- If BRANCH is not a tracked workspace, commands MUST show an error with a
+  suggestion to delete using git CLI
+- If workspace is dirty or branch is ahead of remote, commands MUST block
+  deletion unless `--force` is provided
+- `--force` MAY proceed even when no upstream is configured
+- If BRANCH is the currently checked out workspace, commands MUST error and
+  suggest switching to a safe workspace before deleting
+- `--dry-run --json` MUST output a machine-readable plan without side effects
 
 ### Prune
 
@@ -214,15 +226,15 @@ $ gitcuttle delete BRANCH [--dry-run] [--json] [--force]
 $ gitcuttle prune [--dry-run] [--json] [--force]
 ```
 
-- Delete tracked workspaces when either:
+- Commands MUST delete tracked workspaces when either:
   - Their PR is merged (to any target branch) on that branch's tracked remote
-  - The local branch no longer exists (for example, deleted manually via git cli)
-- If workspace is dirty or branch is ahead of remote, block deletion unless
-  `--force` is provided
-- `--force` may proceed even when no upstream is configured
-- When pruning a missing local branch, remove both metadata and the workspace
-  worktree directory
-- `--dry-run --json` shall output a machine-readable plan without side effects
+  - The local branch no longer exists (for example, deleted manually via git CLI)
+- If workspace is dirty or branch is ahead of remote, commands MUST block
+  deletion unless `--force` is provided
+- `--force` MAY proceed even when no upstream is configured
+- When pruning a missing local branch, commands MUST remove both metadata and
+  the workspace worktree directory
+- `--dry-run --json` MUST output a machine-readable plan without side effects
 
 ### Updating a branch
 
@@ -230,14 +242,16 @@ $ gitcuttle prune [--dry-run] [--json] [--force]
 $ gitcuttle update
 ```
 
-- Rebase current branch onto the remote branch
-- Handle octopus branches:
+- If the current branch has an upstream, commands MUST rebase the current
+  branch onto its upstream remote branch.
+- For octopus branches, commands MUST:
   - Individually update each parent branch:
-    - If parent has upstream, rebase onto upstream
-    - If parent has no upstream, use latest local parent branch tip
-  - Do a new n-way merge
-  - Cherry-pick original post-merge commits
-- If current branch has no upstream:
+    - If parent has upstream, commands MUST rebase onto upstream
+    - If parent has no upstream, commands MUST use the latest local parent
+      branch tip
+  - Commands MUST do a new n-way merge
+  - Commands MUST cherry-pick original post-merge commits
+- If current branch has no upstream, commands MUST:
   - For octopus branches, proceed using parent branch update rules above
   - Otherwise, show an error with a hint to set upstream
 
@@ -247,19 +261,19 @@ $ gitcuttle update
 $ gitcuttle absorb [BRANCH] [-i]
 ```
 
-- If not on octopus workspace, show an error
-- If BRANCH is given, rebase post-merge commits onto branch and rebase the
-  octopus merge
-- If `-i` is given, have user interactively select a branch for each
-  post-merge commit
-- If no args given, heuristically determine which branch each commit should go
-  based on the branches' edited files. If not possible to do reliably, show
-  an error and suggest doing interactively.
-- If a commit maps to multiple possible parent branches, treat as ambiguous,
-  fail, and require `-i`
+- If not on octopus workspace, commands MUST show an error
+- If BRANCH is given, commands MUST rebase post-merge commits onto branch and
+  rebase the octopus merge
+- If `-i` is given, commands MUST have the user interactively select a branch
+  for each post-merge commit
+- If no args are given, commands MUST heuristically determine which branch each
+  commit SHOULD go based on the branches' edited files. If not possible to do
+  reliably, commands MUST show an error and suggest doing interactively.
+- If a commit maps to multiple possible parent branches, commands MUST treat it
+  as ambiguous, fail, and require `-i`
 
 ## Testing Scope
 
-Integration tests are required for user-visible CLI behavior and command
-contracts in this document. Internal implementation details may be covered by
-unit tests where appropriate.
+Integration tests MUST cover user-visible CLI behavior and command contracts in
+this document. Internal implementation details MAY be covered by unit tests
+where appropriate.
