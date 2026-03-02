@@ -121,7 +121,7 @@ implementation work and user-visible automated test coverage.
   integration tests that assert user-visible stderr content for rollback-failed
   scenarios.
 
-- [ ] [P1] Story: Align `gitcuttle absorb <parent>` explicit-target semantics
+- [x] [P1] Story: Align `gitcuttle absorb <parent>` explicit-target semantics
   with DESIGN.
   Replace direct cherry-pick/reset behavior with the required rebase of
   post-merge commits onto the selected parent and octopus merge

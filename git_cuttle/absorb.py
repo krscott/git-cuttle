@@ -71,7 +71,7 @@ def absorb_octopus_workspace(
         branch=workspace.branch,
         parent_refs=workspace.octopus_parents,
     )
-    merge_commit, post_merge_commits = _split_octopus_history(
+    _, post_merge_commits = _split_octopus_history(
         repo_root=repo_root,
         unique_commits=unique_commits,
     )
@@ -105,14 +105,25 @@ def absorb_octopus_workspace(
                 message="failed to cherry-pick commit onto target parent",
             )
 
-        if merge_commit is not None:
-            _checkout_branch(repo_root=repo_root, branch=workspace.branch)
-            _git(
-                repo_root=repo_root,
-                args=["reset", "--hard", merge_commit],
-                code="absorb-reset-failed",
-                message="failed to reset octopus branch after absorb",
-            )
+        _checkout_branch(repo_root=repo_root, branch=workspace.branch)
+        _git(
+            repo_root=repo_root,
+            args=["reset", "--hard", workspace.octopus_parents[0]],
+            code="absorb-reset-failed",
+            message="failed to reset octopus branch before absorb merge rebuild",
+        )
+        _git(
+            repo_root=repo_root,
+            args=[
+                "merge",
+                "--no-ff",
+                "-m",
+                f"Rebuild octopus workspace {workspace.branch}",
+                *workspace.octopus_parents[1:],
+            ],
+            code="absorb-merge-rebuild-failed",
+            message="failed to rebuild octopus merge commit after absorb",
+        )
     except AppError as error:
         operation_error = error
     finally:

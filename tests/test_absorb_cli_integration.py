@@ -130,8 +130,8 @@ def test_cli_absorb_explicit_target_moves_commits_to_parent(tmp_path: Path) -> N
     _git(cwd=repo, args=["add", "release-only.txt"])
     _git(cwd=repo, args=["commit", "-m", "release-only"])
 
-    merge_commit = _git(
-        cwd=repo, args=["rev-parse", "--verify", "integration/main-release~1"]
+    old_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
     ).stdout.strip()
 
     xdg_data_home = tmp_path / "xdg"
@@ -147,7 +147,15 @@ def test_cli_absorb_explicit_target_moves_commits_to_parent(tmp_path: Path) -> N
     new_head = _git(
         cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
     ).stdout.strip()
-    assert new_head == merge_commit
+    assert new_head != old_head
+    merge_parents = _git(
+        cwd=repo,
+        args=["show", "-s", "--format=%P", "integration/main-release"],
+    ).stdout.split()
+    assert len(merge_parents) == 2
+
+    release_head = _git(cwd=repo, args=["rev-parse", "--verify", "release"]).stdout.strip()
+    assert merge_parents[1] == release_head
     release_head_subject = _git(
         cwd=repo, args=["log", "--format=%s", "-n", "1", "release"]
     ).stdout.strip()

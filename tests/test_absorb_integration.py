@@ -81,10 +81,6 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(
     old_head = _git(
         cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
     ).stdout.strip()
-    merge_commit = _git(
-        cwd=repo, args=["rev-parse", "--verify", "integration/main-release~2"]
-    ).stdout.strip()
-
     result = absorb_octopus_workspace(
         repo_root=repo,
         workspace=workspace,
@@ -95,7 +91,15 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(
         cwd=repo, args=["rev-parse", "--verify", "integration/main-release"]
     ).stdout.strip()
     assert old_head != new_head
-    assert new_head == merge_commit
+
+    merge_parents = _git(
+        cwd=repo,
+        args=["show", "-s", "--format=%P", "integration/main-release"],
+    ).stdout.split()
+    assert len(merge_parents) == 2
+    release_head = _git(cwd=repo, args=["rev-parse", "--verify", "release"]).stdout.strip()
+    assert merge_parents[1] == release_head
+
     assert result.changed
     assert [entry.target_parent for entry in result.absorbed_commits] == [
         "release",
