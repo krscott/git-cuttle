@@ -1010,6 +1010,66 @@ def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure() -> None:
 
 
 @pytest.mark.integration
+def test_cli_worktree_multi_branch_rolls_back_on_runtime_failure_detached_head() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        readonly_xdg_data_home = root / "xdg-readonly"
+        repo.mkdir()
+        _init_repo_with_feature_a_and_b(repo)
+
+        detached_head_sha = _git_output(repo, "rev-parse", "main")
+        _git(repo, "checkout", "--detach", detached_head_sha)
+        assert _git_output(repo, "branch", "--show-current") == ""
+
+        readonly_xdg_data_home.mkdir(parents=True, exist_ok=True)
+        readonly_xdg_data_home.chmod(0o500)
+        try:
+            run_env = {**env, "XDG_DATA_HOME": str(readonly_xdg_data_home)}
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "git_cuttle",
+                    "worktree",
+                    "feature-a",
+                    "feature-b",
+                    "--name",
+                    "ws",
+                    "--print-path",
+                ],
+                cwd=repo,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=run_env,
+            )
+        finally:
+            readonly_xdg_data_home.chmod(0o700)
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "rolled back created workspace: ws" in result.stderr
+
+        assert not (repo / ".git" / "gitcuttle" / "workspaces" / "ws.json").exists()
+        assert not (repo / ".git" / "refs" / "gitcuttle" / "ws").exists()
+        branch_result = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/ws"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert branch_result.returncode == 1
+        assert _git_output(repo, "branch", "--show-current") == ""
+        assert _git_output(repo, "rev-parse", "HEAD") == detached_head_sha
+
+
+@pytest.mark.integration
 def test_cli_delete_requires_disambiguation_for_unlinked_collision() -> None:
     project_root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()

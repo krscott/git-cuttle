@@ -8,6 +8,7 @@ from git_cuttle.git_ops import (
     GitCuttleError,
     branch_exists_local,
     get_current_branch,
+    get_head_commit,
     run_git,
 )
 from git_cuttle.rebase import rebase_workspace_commits, update_workspace
@@ -189,13 +190,16 @@ def _show_list() -> int:
 
 
 def _rollback_workspace_creation(
-    workspace_name: str, original_branch: str
+    workspace_name: str, original_branch: str, original_head: str
 ) -> str | None:
     errors: list[str] = []
 
-    if get_current_branch() == workspace_name and branch_exists_local(original_branch):
+    if get_current_branch() == workspace_name:
         try:
-            run_git(["checkout", original_branch])
+            if original_branch:
+                run_git(["checkout", original_branch])
+            else:
+                run_git(["checkout", "--detach", original_head])
         except GitCuttleError as exc:
             errors.append(f"failed to restore original branch: {exc}")
 
@@ -339,14 +343,20 @@ def main(argv: list[str] | None = None) -> int:
             precheck_worktree_target(workspace_name)
 
             original_branch = get_current_branch()
+            original_head = get_head_commit()
             created_workspace = create_workspace(args.branches, workspace_name)
             try:
                 if get_current_branch() == created_workspace.merge_branch:
-                    run_git(["checkout", original_branch])
+                    if original_branch:
+                        run_git(["checkout", original_branch])
+                    else:
+                        run_git(["checkout", "--detach", original_head])
                 result = ensure_workspace_worktree(created_workspace)
             except Exception as exc:
                 rollback_error = _rollback_workspace_creation(
-                    created_workspace.name, original_branch
+                    created_workspace.name,
+                    original_branch,
+                    original_head,
                 )
                 if rollback_error is None:
                     raise GitCuttleError(
