@@ -1,7 +1,5 @@
 # Agent Guide for git-cuttle
 
-This document is to provide agents information to avoid common mistakes.
-
 ## Quick Reference
 
 | Action | Command |
@@ -96,3 +94,8 @@ This file serves as a blueprint for the application's architecture and design. I
 *   The data flow
 
 ...you **must** update `DESIGN.md` to reflect these changes. An AI agent should be able to read `DESIGN.md` and reproduce the current state of the application.
+
+### TODO.md
+Use to track future TODO items. Create file and add new items as needed.
+When possible, create integration tests before implementation (red-green-refactor)
+
