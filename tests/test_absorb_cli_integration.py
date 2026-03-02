@@ -161,6 +161,19 @@ def test_cli_absorb_explicit_target_moves_commits_to_parent(tmp_path: Path) -> N
     ).stdout.strip()
     assert release_head_subject == "release-only"
 
+    unique_after_absorb = _git(
+        cwd=repo,
+        args=[
+            "rev-list",
+            "--reverse",
+            "integration/main-release",
+            "--not",
+            "main",
+            "release",
+        ],
+    ).stdout.splitlines()
+    assert len(unique_after_absorb) == 1
+
 
 @pytest.mark.integration
 def test_cli_absorb_interactive_mode_uses_selected_parent(tmp_path: Path) -> None:

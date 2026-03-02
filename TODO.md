@@ -143,7 +143,7 @@ implementation work and user-visible automated test coverage.
   and clean up temporary backup refs. Add integration coverage for mid-flight
   failures and rollback-failure recovery output.
 
-- [ ] [P1] Story: Align explicit-target `absorb` semantics with DESIGN rebase flow.
+- [x] [P1] Story: Align explicit-target `absorb` semantics with DESIGN rebase flow.
   Implement `gitcuttle absorb <parent>` by rebasing post-merge commits onto the
   selected parent and then rebasing/reconstructing the octopus merge as
   specified, instead of cherry-picking commits then hard-reset/merge rebuild.

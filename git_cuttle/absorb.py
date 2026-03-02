@@ -71,7 +71,7 @@ def absorb_octopus_workspace(
         branch=workspace.branch,
         parent_refs=workspace.octopus_parents,
     )
-    _, post_merge_commits = _split_octopus_history(
+    merge_commit, post_merge_commits = _split_octopus_history(
         repo_root=repo_root,
         unique_commits=unique_commits,
     )
@@ -96,14 +96,39 @@ def absorb_octopus_workspace(
     original_branch = _current_branch(repo_root=repo_root)
     operation_error: AppError | None = None
     try:
-        for item in planned:
-            _checkout_branch(repo_root=repo_root, branch=item.target_parent)
+        if target_parent is not None:
+            if merge_commit is None:
+                raise AppError(
+                    code="invalid-octopus-history",
+                    message="octopus workspace history is missing a merge base commit",
+                    details=workspace.branch,
+                    guidance=(
+                        "rebuild the octopus workspace with `gitcuttle update` and retry absorb",
+                    ),
+                )
+
+            rebased_tip = _rebase_post_merge_commits_onto_parent(
+                repo_root=repo_root,
+                branch=workspace.branch,
+                merge_commit=merge_commit,
+                target_parent=target_parent,
+            )
+            _checkout_branch(repo_root=repo_root, branch=target_parent)
             _git(
                 repo_root=repo_root,
-                args=["cherry-pick", item.commit],
-                code="absorb-cherry-pick-failed",
-                message="failed to cherry-pick commit onto target parent",
+                args=["merge", "--ff-only", rebased_tip],
+                code="absorb-target-update-failed",
+                message="failed to fast-forward absorb target parent",
             )
+        else:
+            for item in planned:
+                _checkout_branch(repo_root=repo_root, branch=item.target_parent)
+                _git(
+                    repo_root=repo_root,
+                    args=["cherry-pick", item.commit],
+                    code="absorb-cherry-pick-failed",
+                    message="failed to cherry-pick commit onto target parent",
+                )
 
         _checkout_branch(repo_root=repo_root, branch=workspace.branch)
         _git(
@@ -146,6 +171,23 @@ def absorb_octopus_workspace(
         after_oid=after_oid,
         absorbed_commits=tuple(planned),
     )
+
+
+def _rebase_post_merge_commits_onto_parent(
+    *,
+    repo_root: Path,
+    branch: str,
+    merge_commit: str,
+    target_parent: str,
+) -> str:
+    _checkout_branch(repo_root=repo_root, branch=branch)
+    _git(
+        repo_root=repo_root,
+        args=["rebase", "--onto", target_parent, merge_commit, branch],
+        code="absorb-rebase-failed",
+        message="failed to rebase post-merge commits onto absorb target parent",
+    )
+    return _branch_head(repo_root=repo_root, branch=branch)
 
 
 def _plan_absorb_targets(

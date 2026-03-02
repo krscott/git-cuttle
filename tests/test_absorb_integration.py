@@ -112,6 +112,19 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(
     ).stdout.splitlines()
     assert release_log == ["release-only-2", "release-only-1"]
 
+    unique_after_absorb = _git(
+        cwd=repo,
+        args=[
+            "rev-list",
+            "--reverse",
+            "integration/main-release",
+            "--not",
+            "main",
+            "release",
+        ],
+    ).stdout.splitlines()
+    assert len(unique_after_absorb) == 1
+
 
 @pytest.mark.integration
 def test_absorb_interactive_mode_uses_selected_parent(tmp_path: Path) -> None:
@@ -160,7 +173,9 @@ def test_absorb_heuristic_mode_fails_when_target_is_ambiguous(tmp_path: Path) ->
 
 
 @pytest.mark.integration
-def test_absorb_reports_cherry_pick_conflict_recovery_guidance(tmp_path: Path) -> None:
+def test_absorb_reports_explicit_target_rebase_conflict_recovery_guidance(
+    tmp_path: Path,
+) -> None:
     repo, workspace = _setup_octopus_repo(tmp_path)
 
     _git(cwd=repo, args=["checkout", "main"])
@@ -180,12 +195,12 @@ def test_absorb_reports_cherry_pick_conflict_recovery_guidance(tmp_path: Path) -
             target_parent="main",
         )
 
-    assert exc_info.value.code == "absorb-cherry-pick-failed"
+    assert exc_info.value.code == "absorb-rebase-failed"
     assert (
-        "resolve conflicts, then run `git cherry-pick --continue`"
+        "resolve conflicts, then run `git rebase --continue`"
         in exc_info.value.guidance
     )
     assert (
-        "or run `git cherry-pick --abort` to restore a clean git state before retrying"
+        "or run `git rebase --abort` to restore a clean git state before retrying"
         in exc_info.value.guidance
     )
