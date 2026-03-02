@@ -194,6 +194,60 @@ def test_cli_update_errors_for_standard_workspace_without_upstream(
 
 
 @pytest.mark.integration
+def test_cli_update_reports_rebase_conflict_recovery_guidance(tmp_path: Path) -> None:
+    bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "feature/conflict"])
+    (local / "shared.txt").write_text("base line\n")
+    _git(cwd=local, args=["add", "shared.txt"])
+    _git(cwd=local, args=["commit", "-m", "add shared file"])
+    _git(cwd=local, args=["push", "-u", "origin", "feature/conflict"])
+
+    upstream_writer = tmp_path / "upstream-writer"
+    _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
+    _git(cwd=upstream_writer, args=["config", "user.name", "Test User"])
+    _git(cwd=upstream_writer, args=["config", "user.email", "test@example.com"])
+    _git(cwd=upstream_writer, args=["checkout", "feature/conflict"])
+    (upstream_writer / "shared.txt").write_text("upstream edit\n")
+    _git(cwd=upstream_writer, args=["add", "shared.txt"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "upstream edit"])
+    _git(cwd=upstream_writer, args=["push", "origin", "feature/conflict"])
+
+    (local / "shared.txt").write_text("local edit\n")
+    _git(cwd=local, args=["add", "shared.txt"])
+    _git(cwd=local, args=["commit", "-m", "local edit"])
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    workspace = WorkspaceMetadata(
+        branch="feature/conflict",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="standard",
+        base_ref="main",
+        octopus_parents=(),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=local,
+        default_remote="origin",
+        workspace=workspace,
+    )
+
+    result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
+
+    assert result.returncode == 2
+    assert "error[update-rebase-failed]: failed to rebase branch onto upstream" in result.stderr
+    assert "hint: resolve conflicts, then run `git rebase --continue`" in result.stderr
+    assert (
+        "hint: or run `git rebase --abort` to restore a clean git state before retrying"
+        in result.stderr
+    )
+
+
+@pytest.mark.integration
 def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(
     tmp_path: Path,
 ) -> None:

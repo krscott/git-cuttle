@@ -153,3 +153,35 @@ def test_absorb_heuristic_mode_fails_when_target_is_ambiguous(tmp_path: Path) ->
         absorb_octopus_workspace(repo_root=repo, workspace=workspace)
 
     assert exc_info.value.code == "absorb-target-uncertain"
+
+
+@pytest.mark.integration
+def test_absorb_reports_cherry_pick_conflict_recovery_guidance(tmp_path: Path) -> None:
+    repo, workspace = _setup_octopus_repo(tmp_path)
+
+    _git(cwd=repo, args=["checkout", "main"])
+    (repo / "README.md").write_text("main side change\n")
+    _git(cwd=repo, args=["add", "README.md"])
+    _git(cwd=repo, args=["commit", "-m", "main readme change"])
+
+    _git(cwd=repo, args=["checkout", "integration/main-release"])
+    (repo / "README.md").write_text("octopus side change\n")
+    _git(cwd=repo, args=["add", "README.md"])
+    _git(cwd=repo, args=["commit", "-m", "octopus readme change"])
+
+    with pytest.raises(AppError) as exc_info:
+        absorb_octopus_workspace(
+            repo_root=repo,
+            workspace=workspace,
+            target_parent="main",
+        )
+
+    assert exc_info.value.code == "absorb-cherry-pick-failed"
+    assert (
+        "resolve conflicts, then run `git cherry-pick --continue`"
+        in exc_info.value.guidance
+    )
+    assert (
+        "or run `git cherry-pick --abort` to restore a clean git state before retrying"
+        in exc_info.value.guidance
+    )

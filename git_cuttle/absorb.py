@@ -94,6 +94,7 @@ def absorb_octopus_workspace(
     )
 
     original_branch = _current_branch(repo_root=repo_root)
+    operation_error: AppError | None = None
     try:
         for item in planned:
             _checkout_branch(repo_root=repo_root, branch=item.target_parent)
@@ -112,11 +113,20 @@ def absorb_octopus_workspace(
                 code="absorb-reset-failed",
                 message="failed to reset octopus branch after absorb",
             )
+    except AppError as error:
+        operation_error = error
     finally:
         if original_branch is not None and original_branch != _current_branch(
             repo_root=repo_root
         ):
-            _checkout_branch(repo_root=repo_root, branch=original_branch)
+            try:
+                _checkout_branch(repo_root=repo_root, branch=original_branch)
+            except AppError as checkout_error:
+                if operation_error is None:
+                    operation_error = checkout_error
+
+    if operation_error is not None:
+        raise operation_error
 
     after_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
     return AbsorbResult(
@@ -322,7 +332,36 @@ def _git(*, repo_root: Path, args: list[str], code: str, message: str) -> None:
     )
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip() or " ".join(args)
-        raise AppError(code=code, message=message, details=details)
+        raise AppError(
+            code=code,
+            message=message,
+            details=details,
+            guidance=_git_failure_guidance(args=args),
+        )
+
+
+def _git_failure_guidance(*, args: list[str]) -> tuple[str, ...]:
+    if not args:
+        return ()
+
+    command = args[0]
+    if command == "rebase":
+        return (
+            "resolve conflicts, then run `git rebase --continue`",
+            "or run `git rebase --abort` to restore a clean git state before retrying",
+        )
+    if command == "merge":
+        return (
+            "resolve conflicts and commit the merge, or run `git merge --abort`",
+            "rerun the absorb flow once git status is clean",
+        )
+    if command == "cherry-pick":
+        return (
+            "resolve conflicts, then run `git cherry-pick --continue`",
+            "or run `git cherry-pick --abort` to restore a clean git state before retrying",
+        )
+
+    return ()
 
 
 def _git_stdout(

@@ -393,6 +393,10 @@ def test_update_octopus_rolls_back_branch_on_merge_failure(tmp_path: Path) -> No
         )
 
     assert exc_info.value.code == "octopus-update-merge-failed"
+    assert (
+        "resolve conflicts and commit the merge, or run `git merge --abort`"
+        in exc_info.value.guidance
+    )
     after_oid = _git(
         cwd=local,
         args=["rev-parse", "--verify", "integration/main-release"],

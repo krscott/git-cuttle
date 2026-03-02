@@ -73,3 +73,35 @@ implementation work and user-visible automated test coverage.
   Include README command examples, troubleshooting guidance for blocked states,
   and test-backed validation of documented command output snippets where
   practical.
+
+## PR Review Follow-ups
+
+- [ ] [P0] Story: Support branch-name omission in `gitcuttle new` per DESIGN.
+  Allow `gitcuttle new` without `-b/--branch`, generate a random inverse-hex
+  workspace branch name, and ensure destination/output + metadata behavior stay
+  consistent with explicit branch mode. Add CLI integration tests for omitted
+  branch generation and uniqueness.
+
+- [ ] [P0] Story: Align octopus `update` with parent-update contract.
+  Update each tracked parent individually before octopus rebuild (rebase parent
+  onto upstream when upstream exists; otherwise use local parent tip), then
+  rebuild and replay post-merge commits. Add integration tests asserting parent
+  update semantics and resulting commit graph.
+
+- [ ] [P0] Story: Enforce atomic rollback contracts in mutating multi-step flows.
+  Wire transaction/backup-ref primitives into command paths that mutate multiple
+  refs/worktrees (`new`, `delete`, `prune`, `update`, `absorb`) so failures
+  restore refs, worktrees, and metadata deterministically, including rollback
+  failure reporting with exact partial state and recovery commands.
+
+- [x] [P1] Story: Strengthen conflict guidance on merge/rebase/cherry-pick errors.
+  Ensure conflict-prone git operation failures surface actionable guidance
+  matching DESIGN requirements (how to restore git to an operable state), and
+  add integration assertions for guidance text on blocked/conflict flows.
+
+- [ ] [P1] Story: Fix delete guidance and close MUST-level integration gaps.
+  For untracked workspace deletion, include guidance to delete via git CLI as
+  required by DESIGN. Add integration tests for: invalid base-ref hinting,
+  absorb failure when current workspace is non-octopus, prune missing-local-
+  branch cleanup (metadata + directory), and list cache-refresh behavior that
+  never creates tracking entries.

@@ -296,7 +296,8 @@ def _create_octopus_merge_commit(
             message="failed to create octopus merge commit",
             details=result.stderr.strip() or result.stdout.strip() or branch,
             guidance=(
-                "resolve parent branch conflicts before retrying octopus workspace creation",
+                "resolve conflicts and commit the merge, or run `git merge --abort`",
+                "rerun `gitcuttle new` once git status is clean",
             ),
         )
 

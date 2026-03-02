@@ -366,7 +366,36 @@ def _git(*, repo_root: Path, args: list[str], code: str, message: str) -> None:
     )
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip() or " ".join(args)
-        raise AppError(code=code, message=message, details=details)
+        raise AppError(
+            code=code,
+            message=message,
+            details=details,
+            guidance=_git_failure_guidance(args=args),
+        )
+
+
+def _git_failure_guidance(*, args: list[str]) -> tuple[str, ...]:
+    if not args:
+        return ()
+
+    command = args[0]
+    if command == "rebase":
+        return (
+            "resolve conflicts, then run `git rebase --continue`",
+            "or run `git rebase --abort` to restore a clean git state before retrying",
+        )
+    if command == "merge":
+        return (
+            "resolve conflicts and commit the merge, or run `git merge --abort`",
+            "rerun `gitcuttle update` once git status is clean",
+        )
+    if command == "cherry-pick":
+        return (
+            "resolve conflicts, then run `git cherry-pick --continue`",
+            "or run `git cherry-pick --abort` to restore a clean git state before retrying",
+        )
+
+    return ()
 
 
 def _git_stdout(
