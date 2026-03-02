@@ -176,3 +176,37 @@ def test_cli_behaves_same_from_repo_root_and_worktree(tmp_path: pathlib.Path) ->
     assert worktree_result.returncode == 0
     assert root_result.stdout == worktree_result.stdout
     assert "Hello, Grace!" in root_result.stdout
+
+
+@pytest.mark.integration
+def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    git_dir_result = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=repo,
+    )
+    git_dir = pathlib.Path(git_dir_result.stdout.strip())
+    if not git_dir.is_absolute():
+        git_dir = (repo / git_dir).resolve(strict=False)
+    (git_dir / "MERGE_HEAD").write_text("abc123\n")
+
+    result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "error[git-operation-in-progress]: repository has an in-progress git operation"
+        in result.stderr
+    )
+    assert "details: detected state marker: MERGE_HEAD" in result.stderr
+    assert "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
