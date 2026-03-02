@@ -210,6 +210,15 @@ def _is_workspace_tracked_worktree_pair(
     )
 
 
+def _delete_tracked_worktree_entry(tracked_worktree: TrackedWorktree) -> None:
+    metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
+    remove_tracked_worktree_path(tracked_worktree)
+    delete_tracked_worktree(
+        tracked_worktree.branch,
+        metadata_path=metadata_path,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -327,12 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not has_worktree:
                     raise GitCuttleError("tracked worktree not found")
                 assert tracked_worktree is not None
-                metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
-                remove_tracked_worktree_path(tracked_worktree)
-                delete_tracked_worktree(
-                    tracked_worktree.branch,
-                    metadata_path=metadata_path,
-                )
+                _delete_tracked_worktree_entry(tracked_worktree)
                 print(f"deleted tracked worktree: {tracked_worktree.branch}")
                 return 0
 
@@ -349,12 +353,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
 
             if tracked_worktree is not None:
-                metadata_path = tracked_worktree_metadata_path(tracked_worktree.branch)
-                remove_tracked_worktree_path(tracked_worktree)
-                delete_tracked_worktree(
-                    tracked_worktree.branch,
-                    metadata_path=metadata_path,
-                )
+                _delete_tracked_worktree_entry(tracked_worktree)
 
             if target_workspace is not None:
                 delete_workspace(target_workspace.name)
