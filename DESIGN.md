@@ -69,6 +69,9 @@ In descending order, this project optimizes for:
   workspace worktree entry.
 - Deleting a tracked worktree path requires that metadata branch and on-disk
   worktree branch match; mismatches fail safely instead of removing any path.
+- Deleting a tracked worktree path also fails safely when the managed path is
+  missing but still registered in `git worktree list`; metadata is preserved so
+  users can prune stale git registration and retry.
 - `gitcuttle delete --workspace-only` on a linked workspace/worktree pair keeps
   worktree tracking by converting the record to `kind="branch"` and clearing
   `workspace_name`.
@@ -115,6 +118,8 @@ In descending order, this project optimizes for:
   - Removes tracked worktree path and tracked metadata when present.
   - Removes workspace metadata/ref when target is a workspace.
   - Supports `--workspace-only` and `--worktree-only` for explicit targeting.
+  - `--worktree-only` fails if tracked path is missing but still registered in
+    Git, preserving metadata and surfacing remediation (`git worktree prune`).
   - `--workspace-only` preserves linked worktree tracking by converting
     workspace-kind tracked metadata to branch-kind tracked metadata.
   - If both targets exist but are not the same tracked workspace pair, delete
