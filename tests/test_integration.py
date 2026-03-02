@@ -4,9 +4,23 @@ These tests invoke the CLI as a real process to verify the end-to-end user exper
 """
 
 import os
+import pathlib
 import subprocess
 
 import pytest
+
+
+def _init_repo(path: pathlib.Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], check=True, cwd=path)
+    subprocess.run(["git", "config", "user.name", "Test User"], check=True, cwd=path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        check=True,
+        cwd=path,
+    )
+    (path / "README.md").write_text("repo\n")
+    subprocess.run(["git", "add", "README.md"], check=True, cwd=path)
+    subprocess.run(["git", "commit", "-m", "init"], check=True, cwd=path)
 
 
 @pytest.mark.integration
@@ -31,6 +45,32 @@ def test_cli_default_name() -> None:
     )
     assert result.returncode == 0
     assert "Hello, World!" in result.stdout
+
+
+@pytest.mark.integration
+def test_cli_destination_outputs_path_only() -> None:
+    result = subprocess.run(
+        ["gitcuttle", "--destination"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(pathlib.Path.cwd().resolve())
+    assert result.stderr == ""
+
+
+@pytest.mark.integration
+def test_cli_destination_short_flag_outputs_path_only() -> None:
+    result = subprocess.run(
+        ["gitcuttle", "-d"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(pathlib.Path.cwd().resolve())
+    assert result.stderr == ""
 
 
 @pytest.mark.integration
@@ -90,3 +130,97 @@ def test_cli_flag_overrides_env_var() -> None:
     assert result.returncode == 0
     assert "Hello, Eve!" in result.stdout
     assert "Greeting user..." in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
+    """Test CLI fails with guidance when run outside a git repository."""
+    result = subprocess.run(
+        ["gitcuttle", "Frank"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode != 0
+    assert "error[not-in-git-repo]: gitcuttle must be run from within a git repository" in result.stderr
+    assert "hint: change to your repository root or one of its worktrees and retry" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_behaves_same_from_repo_root_and_worktree(tmp_path: pathlib.Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_repo(repo_root)
+
+    worktree_dir = tmp_path / "repo-feature"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "feature", str(worktree_dir)],
+        check=True,
+        cwd=repo_root,
+    )
+
+    root_result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    worktree_result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=worktree_dir,
+    )
+
+    assert root_result.returncode == 0
+    assert worktree_result.returncode == 0
+    assert root_result.stdout == worktree_result.stdout
+    assert "Hello, Grace!" in root_result.stdout
+
+
+@pytest.mark.integration
+def test_cli_blocks_when_git_operation_is_in_progress(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    git_dir_result = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=repo,
+    )
+    git_dir = pathlib.Path(git_dir_result.stdout.strip())
+    if not git_dir.is_absolute():
+        git_dir = (repo / git_dir).resolve(strict=False)
+    (git_dir / "MERGE_HEAD").write_text("abc123\n")
+
+    result = subprocess.run(
+        ["gitcuttle", "Grace"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "error[git-operation-in-progress]: repository has an in-progress git operation"
+        in result.stderr
+    )
+    assert "details: detected state marker: MERGE_HEAD" in result.stderr
+    assert "hint: resolve or abort the git operation and rerun gitcuttle" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_invalid_arguments_show_actionable_guidance() -> None:
+    result = subprocess.run(
+        ["gitcuttle", "--not-a-real-flag"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "error[invalid-arguments]: invalid command arguments" in result.stderr
+    assert "details: unrecognized arguments: --not-a-real-flag" in result.stderr
+    assert "hint: run `gitcuttle --help` to view valid usage" in result.stderr

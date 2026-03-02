@@ -7,6 +7,7 @@ log = logging.getLogger(__name__)
 @dataclass(kw_only=True, frozen=True)
 class Options:
     name: str
+    destination: bool = False
 
 
 def greet(opts: Options) -> None:
