@@ -88,7 +88,7 @@ implementation work and user-visible automated test coverage.
   rebuild and replay post-merge commits. Add integration tests asserting parent
   update semantics and resulting commit graph.
 
-- [ ] [P0] Story: Enforce atomic rollback contracts in mutating multi-step flows.
+- [x] [P0] Story: Enforce atomic rollback contracts in mutating multi-step flows.
   Wire transaction/backup-ref primitives into command paths that mutate multiple
   refs/worktrees (`new`, `delete`, `prune`, `update`, `absorb`) so failures
   restore refs, worktrees, and metadata deterministically, including rollback
