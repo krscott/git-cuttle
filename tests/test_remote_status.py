@@ -3,6 +3,8 @@ from pathlib import Path
 
 from git_cuttle.metadata_manager import RepoMetadata, WorkspaceMetadata
 from git_cuttle.remote_status import (
+    RemoteAheadBehindStatus,
+    RemoteStatusCache,
     remote_ahead_behind_for_repo,
     remote_ahead_behind_for_workspace,
 )
@@ -135,3 +137,67 @@ def test_remote_ahead_behind_counts_diverged_branch(tmp_path: Path) -> None:
     assert status.ahead == 1
     assert status.behind == 1
     assert status.known
+
+
+def test_remote_status_cache_reuses_value_within_ttl(tmp_path: Path) -> None:
+    now_values = iter([100.0, 120.0])
+    cache = RemoteStatusCache(now=lambda: next(now_values))
+    repo = RepoMetadata(
+        git_dir=(tmp_path / "repo.git").resolve(strict=False),
+        repo_root=(tmp_path / "repo").resolve(strict=False),
+        default_remote="origin",
+        tracked_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+        workspaces={},
+    )
+    calls = {"count": 0}
+
+    def resolver(_: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
+        calls["count"] += 1
+        return {
+            "feature": RemoteAheadBehindStatus(
+                branch="feature",
+                upstream_ref="origin/feature",
+                ahead=calls["count"],
+                behind=0,
+            )
+        }
+
+    first = cache.statuses_for_repo(repo=repo, resolver=resolver)
+    second = cache.statuses_for_repo(repo=repo, resolver=resolver)
+
+    assert calls["count"] == 1
+    assert first["feature"].ahead == 1
+    assert second["feature"].ahead == 1
+
+
+def test_remote_status_cache_refreshes_after_ttl(tmp_path: Path) -> None:
+    now_values = iter([100.0, 161.0])
+    cache = RemoteStatusCache(now=lambda: next(now_values))
+    repo = RepoMetadata(
+        git_dir=(tmp_path / "repo.git").resolve(strict=False),
+        repo_root=(tmp_path / "repo").resolve(strict=False),
+        default_remote="origin",
+        tracked_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+        workspaces={},
+    )
+    calls = {"count": 0}
+
+    def resolver(_: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
+        calls["count"] += 1
+        return {
+            "feature": RemoteAheadBehindStatus(
+                branch="feature",
+                upstream_ref="origin/feature",
+                ahead=calls["count"],
+                behind=0,
+            )
+        }
+
+    first = cache.statuses_for_repo(repo=repo, resolver=resolver)
+    second = cache.statuses_for_repo(repo=repo, resolver=resolver)
+
+    assert calls["count"] == 2
+    assert first["feature"].ahead == 1
+    assert second["feature"].ahead == 2

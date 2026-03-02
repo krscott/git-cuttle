@@ -136,6 +136,8 @@ Implemented behavior:
 - return unknown status when local branch or remote-tracking ref is missing
 - compute ahead/behind counts using `git rev-list --left-right --count`
 - provide per-workspace and per-repo status mapping helpers
+- provide a `RemoteStatusCache` with a default 60-second TTL for list-style
+  repeated status lookups
 
 This is currently library-level functionality and is not yet wired to the
 `list` command output.

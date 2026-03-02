@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import time
+from typing import Callable
 
 from git_cuttle.metadata_manager import RepoMetadata, WorkspaceMetadata
 
@@ -15,6 +17,40 @@ class RemoteAheadBehindStatus:
     @property
     def known(self) -> bool:
         return self.ahead is not None and self.behind is not None
+
+
+StatusResolver = Callable[[RepoMetadata], dict[str, "RemoteAheadBehindStatus"]]
+
+
+def _default_repo_status_resolver(repo: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
+    return remote_ahead_behind_for_repo(repo=repo)
+
+
+@dataclass(kw_only=True)
+class RemoteStatusCache:
+    ttl_seconds: float = 60.0
+    now: Callable[[], float] = time.time
+
+    def __post_init__(self) -> None:
+        self._entries: dict[str, tuple[float, dict[str, RemoteAheadBehindStatus]]] = {}
+
+    def statuses_for_repo(
+        self,
+        *,
+        repo: RepoMetadata,
+        resolver: StatusResolver = _default_repo_status_resolver,
+    ) -> dict[str, RemoteAheadBehindStatus]:
+        cache_key = str(repo.git_dir)
+        cached = self._entries.get(cache_key)
+        now = self.now()
+        if cached is not None:
+            fetched_at, statuses = cached
+            if now - fetched_at < self.ttl_seconds:
+                return statuses
+
+        statuses = resolver(repo)
+        self._entries[cache_key] = (now, statuses)
+        return statuses
 
 
 def remote_ahead_behind_for_repo(*, repo: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
