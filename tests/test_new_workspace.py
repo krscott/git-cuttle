@@ -160,3 +160,26 @@ def test_create_octopus_workspace_requires_at_least_two_parent_refs(tmp_path: Pa
         )
 
     assert exc_info.value.code == "invalid-octopus-parents"
+
+
+@pytest.mark.integration
+def test_create_octopus_workspace_rejects_duplicate_parent_refs(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    _git(cwd=repo, args=["checkout", "-b", "release"])
+
+    metadata_path = tmp_path / "workspaces.json"
+    metadata_manager = MetadataManager(path=metadata_path)
+
+    with pytest.raises(AppError) as exc_info:
+        create_octopus_workspace(
+            cwd=repo,
+            branch="integration/main-release-main",
+            parent_refs=["main", "release", "main"],
+            metadata_manager=metadata_manager,
+        )
+
+    assert exc_info.value.code == "invalid-octopus-parents"
+    assert exc_info.value.message == "octopus parent refs must be unique"

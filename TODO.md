@@ -57,7 +57,7 @@
 
 - [x] Build integration test matrix covering user-visible behavior and command contracts in `DESIGN.md`.
 - [x] Add integration tests for safety-critical flows (transaction rollback, rollback failure path, no-upstream blocking, force overrides).
-- [ ] Add integration tests for octopus workflows (`new`, `update`, `absorb`) including ambiguity handling.
+- [x] Add integration tests for octopus `new`/`update` workflows, including parent-ref ambiguity handling.
 - [x] Add integration tests for delete/prune edge cases (current workspace deletion block, missing local branch prune, unknown PR state behavior).
 - [x] Add integration tests for metadata/migration behavior (schema validation, backup creation, migration correctness).
 

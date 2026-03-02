@@ -189,3 +189,66 @@ def test_update_octopus_rebuilds_from_updated_parents_and_replays_post_merge_com
     assert result.changed
     assert result.parent_refs == ("origin/main", "origin/release")
     assert len(result.replayed_commits) == 1
+
+
+@pytest.mark.integration
+def test_update_octopus_prefers_remote_parent_when_local_parent_is_ambiguous(tmp_path: Path) -> None:
+    bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "release"])
+    (local / "release.txt").write_text("release local v1\n")
+    _git(cwd=local, args=["add", "release.txt"])
+    _git(cwd=local, args=["commit", "-m", "release local v1"])
+    _git(cwd=local, args=["push", "-u", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "main"])
+    _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
+    _git(cwd=local, args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"])
+
+    upstream_writer = tmp_path / "upstream-writer"
+    _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
+    _git(cwd=upstream_writer, args=["config", "user.name", "Test User"])
+    _git(cwd=upstream_writer, args=["config", "user.email", "test@example.com"])
+    _git(cwd=upstream_writer, args=["checkout", "release"])
+    (upstream_writer / "release.txt").write_text("release remote v2\n")
+    _git(cwd=upstream_writer, args=["add", "release.txt"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "release remote v2"])
+    _git(cwd=upstream_writer, args=["push", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "release"])
+    (local / "release-local-only.txt").write_text("local only\n")
+    _git(cwd=local, args=["add", "release-local-only.txt"])
+    _git(cwd=local, args=["commit", "-m", "release local only"])
+
+    local_release_head = _git(cwd=local, args=["rev-parse", "--verify", "release"]).stdout.strip()
+
+    workspace = WorkspaceMetadata(
+        branch="integration/main-release",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="octopus",
+        base_ref="main",
+        octopus_parents=("main", "release"),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+
+    result = update_octopus_workspace(
+        repo_root=local,
+        workspace=workspace,
+        default_remote="origin",
+    )
+
+    remote_release_head = _git(cwd=local, args=["rev-parse", "--verify", "origin/release"]).stdout.strip()
+    assert local_release_head != remote_release_head
+    assert result.parent_refs == ("origin/main", "origin/release")
+
+    rebuilt_parent_commit = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "integration/main-release"],
+    ).stdout.strip()
+    rebuilt_merge_parents = _git(
+        cwd=local,
+        args=["show", "-s", "--format=%P", rebuilt_parent_commit],
+    ).stdout.strip().split()
+    assert rebuilt_merge_parents[1] == remote_release_head
