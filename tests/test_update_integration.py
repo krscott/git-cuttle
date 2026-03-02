@@ -318,11 +318,14 @@ def test_update_octopus_rebases_parent_onto_remote_then_uses_updated_local_tip(
         .split()
     )
     assert rebuilt_merge_parents[1] == updated_release_head
-    assert _git(
-        cwd=local,
-        args=["merge-base", "--is-ancestor", "origin/release", "release"],
-        check=False,
-    ).returncode == 0
+    assert (
+        _git(
+            cwd=local,
+            args=["merge-base", "--is-ancestor", "origin/release", "release"],
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 @pytest.mark.integration
@@ -391,12 +394,16 @@ def test_update_octopus_skips_parent_without_upstream_even_when_remote_exists(
         cwd=local, args=["rev-parse", "--verify", "release"]
     ).stdout.strip()
     assert updated_release_head == local_release_head
-    assert _git(
-        cwd=local,
-        args=["merge-base", "--is-ancestor", "origin/release", "release"],
-        check=False,
-    ).returncode != 0
+    assert (
+        _git(
+            cwd=local,
+            args=["merge-base", "--is-ancestor", "origin/release", "release"],
+            check=False,
+        ).returncode
+        != 0
+    )
     assert result.parent_refs == ("main", "release")
+
 
 @pytest.mark.integration
 def test_update_octopus_uses_local_parent_tips_when_no_remote_is_configured(

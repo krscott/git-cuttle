@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from git_cuttle.errors import AppError
-from git_cuttle.git_ops import add_worktree
-from git_cuttle.git_ops import canonical_git_dir, repo_root
+from git_cuttle.git_ops import add_worktree, canonical_git_dir, repo_root
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.plan_output import (
     DryRunPlan,

@@ -10,7 +10,11 @@ from git_cuttle.git_ops import (
     remove_backup_refs,
 )
 from git_cuttle.metadata_manager import WorkspaceMetadata
-from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionStep
+from git_cuttle.transaction import (
+    Transaction,
+    TransactionExecutionError,
+    TransactionStep,
+)
 
 CommitTargetChooser = Callable[[str, tuple[str, ...]], str]
 
@@ -100,7 +104,9 @@ def absorb_octopus_workspace(
     )
 
     original_branch = _current_branch(repo_root=repo_root)
-    touched_branches = tuple(dict.fromkeys((*workspace.octopus_parents, workspace.branch)))
+    touched_branches = tuple(
+        dict.fromkeys((*workspace.octopus_parents, workspace.branch))
+    )
     transaction = Transaction()
 
     transaction.add_step(
@@ -434,7 +440,9 @@ def _rebuild_octopus_after_absorb(
     )
 
 
-def _restore_branch_from_backup_ref(*, repo_root: Path, txn_id: str, branch: str) -> None:
+def _restore_branch_from_backup_ref(
+    *, repo_root: Path, txn_id: str, branch: str
+) -> None:
     backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
     backup_oid = _rev_parse(repo_root=repo_root, ref=backup_ref)
     if backup_oid is None:

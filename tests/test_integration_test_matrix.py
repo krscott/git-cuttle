@@ -1,6 +1,5 @@
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 MATRIX_PATH = Path(__file__).resolve().parent.parent / "INTEGRATION_TEST_MATRIX.md"
 SECTIONS_REQUIRING_COVERAGE = {

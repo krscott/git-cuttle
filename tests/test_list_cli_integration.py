@@ -56,14 +56,14 @@ def _write_counting_fake_gh(*, directory: Path, count_file: Path) -> None:
         directory=directory,
         script_body=(
             "#!/bin/sh\n"
-            f"COUNT_FILE=\"{count_file}\"\n"
+            f'COUNT_FILE="{count_file}"\n'
             "count=0\n"
-            "if [ -f \"$COUNT_FILE\" ]; then\n"
-            "  count=$(cat \"$COUNT_FILE\")\n"
+            'if [ -f "$COUNT_FILE" ]; then\n'
+            '  count=$(cat "$COUNT_FILE")\n'
             "fi\n"
             "count=$((count + 1))\n"
-            "printf '%s\\n' \"$count\" > \"$COUNT_FILE\"\n"
-            "printf '[{\"state\":\"OPEN\",\"isDraft\":false,\"title\":\"PR call %s\",\"url\":\"https://github.com/acme/repo/pull/%s\"}]\\n' \"$count\" \"$count\"\n"
+            'printf \'%s\\n\' "$count" > "$COUNT_FILE"\n'
+            'printf \'[{"state":"OPEN","isDraft":false,"title":"PR call %s","url":"https://github.com/acme/repo/pull/%s"}]\\n\' "$count" "$count"\n'
         ),
     )
 
@@ -309,7 +309,9 @@ def test_list_refreshes_status_cache_after_ttl_expiry(tmp_path: Path) -> None:
         env=env,
         branch="feature/list-cache-refresh",
     )
-    _git(cwd=workspace_path, args=["push", "-u", "origin", "feature/list-cache-refresh"])
+    _git(
+        cwd=workspace_path, args=["push", "-u", "origin", "feature/list-cache-refresh"]
+    )
     _git(
         cwd=repo,
         args=["remote", "set-url", "origin", "https://github.com/acme/repo.git"],

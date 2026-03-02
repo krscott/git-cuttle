@@ -9,7 +9,11 @@ from git_cuttle.git_ops import (
     restore_branch_from_backup_ref,
     set_branch_head,
 )
-from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionStep
+from git_cuttle.transaction import (
+    Transaction,
+    TransactionExecutionError,
+    TransactionStep,
+)
 
 
 def run_command_transaction(
@@ -193,7 +197,9 @@ def _create_backup_refs(
             cwd=repo_root,
         )
     except RuntimeError as error:
-        raise AppError(code=error_code, message=error_message, details=str(error)) from error
+        raise AppError(
+            code=error_code, message=error_message, details=str(error)
+        ) from error
 
 
 def _remove_backup_refs(
@@ -206,7 +212,9 @@ def _remove_backup_refs(
     try:
         remove_backup_refs(txn_id=txn_id, cwd=repo_root)
     except RuntimeError as error:
-        raise AppError(code=error_code, message=error_message, details=str(error)) from error
+        raise AppError(
+            code=error_code, message=error_message, details=str(error)
+        ) from error
 
 
 def _restore_branch_from_backup_ref(
@@ -224,7 +232,9 @@ def _restore_branch_from_backup_ref(
         else:
             set_branch_head(branch=branch, oid=backup_oid, cwd=repo_root)
     except RuntimeError as error:
-        raise AppError(code=error_code, message=error_message, details=str(error)) from error
+        raise AppError(
+            code=error_code, message=error_message, details=str(error)
+        ) from error
 
 
 def _restore_backup_command(*, txn_id: str, branch: str) -> str:

@@ -154,7 +154,9 @@ def test_cli_absorb_explicit_target_moves_commits_to_parent(tmp_path: Path) -> N
     ).stdout.split()
     assert len(merge_parents) == 2
 
-    release_head = _git(cwd=repo, args=["rev-parse", "--verify", "release"]).stdout.strip()
+    release_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
     assert merge_parents[1] == release_head
     release_head_subject = _git(
         cwd=repo, args=["log", "--format=%s", "-n", "1", "release"]
@@ -257,12 +259,17 @@ def test_cli_absorb_fails_when_current_workspace_is_non_octopus(tmp_path: Path) 
     result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=[])
 
     assert result.returncode == 2
-    assert "error[invalid-workspace-kind]: absorb requires octopus workspace metadata" in result.stderr
+    assert (
+        "error[invalid-workspace-kind]: absorb requires octopus workspace metadata"
+        in result.stderr
+    )
     assert "details: feature/standard" in result.stderr
 
 
 @pytest.mark.integration
-def test_cli_absorb_rolls_back_touched_refs_and_cleans_backup_refs(tmp_path: Path) -> None:
+def test_cli_absorb_rolls_back_touched_refs_and_cleans_backup_refs(
+    tmp_path: Path,
+) -> None:
     repo, workspace = _setup_octopus_repo(tmp_path)
 
     (repo / "shared.txt").write_text("from octopus\n")
@@ -350,12 +357,12 @@ def test_cli_absorb_reports_deterministic_recovery_when_rollback_is_partial(
         "  exit 0\n"
         "fi\n"
         "branch=$(git rev-parse --abbrev-ref HEAD)\n"
-        "if [ \"$branch\" != \"release\" ]; then\n"
+        'if [ "$branch" != "release" ]; then\n'
         "  exit 0\n"
         "fi\n"
         "touch .git/gitcuttle_absorb_hook_done\n"
         "for ref in $(git for-each-ref --format='%(refname)' refs/gitcuttle/txn); do\n"
-        "  git update-ref -d \"$ref\"\n"
+        '  git update-ref -d "$ref"\n'
         "done\n"
         "printf 'hook divergence\\n' >> release.txt\n"
         "git add release.txt\n"

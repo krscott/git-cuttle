@@ -5,7 +5,7 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [ ] [P0] Story: Restore formatting compliance so CI passes.
+- [x] [P0] Story: Restore formatting compliance so CI passes.
   PR #2 currently fails the `format` check. Run `./format.sh`, commit the
   formatter changes, and ensure CI no longer reports formatting drift.
 

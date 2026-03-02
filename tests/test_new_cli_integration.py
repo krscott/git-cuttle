@@ -236,7 +236,7 @@ def test_cli_new_reports_worktree_recovery_when_rollback_is_partial(
         "  exit 0\n"
         "fi\n"
         f"touch '{marker_path}'\n"
-        "git worktree lock \"$PWD\"\n"
+        'git worktree lock "$PWD"\n'
         f"chmod 500 '{metadata_dir}'\n"
     )
     post_checkout.chmod(0o755)

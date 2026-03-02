@@ -9,7 +9,11 @@ from git_cuttle.git_ops import (
     remove_backup_refs,
 )
 from git_cuttle.metadata_manager import WorkspaceMetadata
-from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionStep
+from git_cuttle.transaction import (
+    Transaction,
+    TransactionExecutionError,
+    TransactionStep,
+)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -75,9 +79,7 @@ def update_non_octopus_workspace(
             code="no-upstream",
             message="workspace upstream branch does not exist",
             details=upstream_ref,
-            guidance=(
-                "push the upstream branch or configure a different upstream",
-            ),
+            guidance=("push the upstream branch or configure a different upstream",),
         )
 
     before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
@@ -361,14 +363,14 @@ def _rebuild_octopus_branch(
                     f"update error [{error.code}]: {error.details or error.message}; "
                     f"rollback error: {rollback_error}"
                 ),
-                guidance=(
-                    _restore_backup_command(txn_id=txn_id, branch=branch),
-                ),
+                guidance=(_restore_backup_command(txn_id=txn_id, branch=branch),),
             ) from error
         raise
 
 
-def _restore_branch_from_backup_ref(*, repo_root: Path, txn_id: str, branch: str) -> None:
+def _restore_branch_from_backup_ref(
+    *, repo_root: Path, txn_id: str, branch: str
+) -> None:
     backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
     backup_oid = _rev_parse(repo_root=repo_root, ref=backup_ref)
     if backup_oid is None:
@@ -410,9 +412,7 @@ def _branch_head(*, repo_root: Path, branch: str) -> str:
     return branch_oid
 
 
-def _update_octopus_parent(
-    *, repo_root: Path, parent_ref: str
-) -> str:
+def _update_octopus_parent(*, repo_root: Path, parent_ref: str) -> str:
     local_ref = f"refs/heads/{parent_ref}"
     if _rev_parse(repo_root=repo_root, ref=local_ref) is not None:
         upstream_ref = _branch_upstream_ref(repo_root=repo_root, branch=parent_ref)
@@ -442,9 +442,7 @@ def _update_octopus_parent(
             repo_root=repo_root,
             args=["rebase", upstream_ref, parent_ref],
             code="octopus-parent-update-failed",
-            message=(
-                f"failed to rebase octopus parent {parent_ref} onto upstream"
-            ),
+            message=(f"failed to rebase octopus parent {parent_ref} onto upstream"),
         )
         return parent_ref
 
@@ -531,7 +529,13 @@ def _current_branch(*, repo_root: Path) -> str | None:
 
 def _branch_upstream_ref(*, repo_root: Path, branch: str) -> str | None:
     result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{upstream}}"],
+        [
+            "git",
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            f"{branch}@{{upstream}}",
+        ],
         capture_output=True,
         text=True,
         check=False,

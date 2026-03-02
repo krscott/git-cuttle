@@ -239,7 +239,10 @@ def test_cli_update_reports_rebase_conflict_recovery_guidance(tmp_path: Path) ->
     result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
 
     assert result.returncode == 2
-    assert "error[update-rebase-failed]: failed to rebase branch onto upstream" in result.stderr
+    assert (
+        "error[update-rebase-failed]: failed to rebase branch onto upstream"
+        in result.stderr
+    )
     assert "hint: resolve conflicts, then run `git rebase --continue`" in result.stderr
     assert (
         "hint: or run `git rebase --abort` to restore a clean git state before retrying"
@@ -407,7 +410,10 @@ def test_cli_update_octopus_rolls_back_parent_refs_and_cleans_backup_refs(
     result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
 
     assert result.returncode == 2
-    assert "error[octopus-update-merge-failed]: failed to rebuild octopus merge commit" in result.stderr
+    assert (
+        "error[octopus-update-merge-failed]: failed to rebuild octopus merge commit"
+        in result.stderr
+    )
 
     after_main_oid = _git(
         cwd=local,
@@ -479,12 +485,12 @@ def test_cli_update_octopus_reports_deterministic_recovery_when_rollback_is_part
         "  exit 0\n"
         "fi\n"
         "branch=$(git rev-parse --abbrev-ref HEAD)\n"
-        "if [ \"$branch\" != \"integration/main-release\" ]; then\n"
+        'if [ "$branch" != "integration/main-release" ]; then\n'
         "  exit 0\n"
         "fi\n"
         "touch .git/gitcuttle_update_hook_done\n"
         "for ref in $(git for-each-ref --format='%(refname)' refs/gitcuttle/txn); do\n"
-        "  git update-ref -d \"$ref\"\n"
+        '  git update-ref -d "$ref"\n'
         "done\n"
     )
     post_checkout.chmod(0o755)
@@ -518,5 +524,7 @@ def test_cli_update_octopus_reports_deterministic_recovery_when_rollback_is_part
     )
     assert "rollback failures:" in result.stderr
     assert "deterministic recovery commands:" in result.stderr
-    assert "git checkout release && git reset --hard refs/gitcuttle/txn/" in result.stderr
+    assert (
+        "git checkout release && git reset --hard refs/gitcuttle/txn/" in result.stderr
+    )
     assert "git checkout main && git reset --hard refs/gitcuttle/txn/" in result.stderr

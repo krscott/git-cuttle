@@ -287,12 +287,9 @@ def test_delete_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
 
     def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
         nonlocal did_fail
-        if (
-            not did_fail
-            and all(
-                "feature/delete-rollback" not in repo_meta.workspaces
-                for repo_meta in metadata.repos.values()
-            )
+        if not did_fail and all(
+            "feature/delete-rollback" not in repo_meta.workspaces
+            for repo_meta in metadata.repos.values()
         ):
             did_fail = True
             raise RuntimeError("simulated metadata write failure")
@@ -814,12 +811,9 @@ def test_prune_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
 
     def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
         nonlocal did_fail
-        if (
-            not did_fail
-            and all(
-                "feature/prune-rollback" not in repo_meta.workspaces
-                for repo_meta in metadata.repos.values()
-            )
+        if not did_fail and all(
+            "feature/prune-rollback" not in repo_meta.workspaces
+            for repo_meta in metadata.repos.values()
         ):
             did_fail = True
             raise RuntimeError("simulated metadata write failure")

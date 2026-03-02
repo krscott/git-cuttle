@@ -38,8 +38,8 @@ def _write_git_passthrough_with_update_ref_failure(
     lock_metadata_snippet = ""
     if metadata_dir_to_lock is not None:
         lock_metadata_snippet = (
-            f"if [ \"${{1-}}\" = \"branch\" ] && [ \"${{3-}}\" = \"{branch}\" ]; then\n"
-            f"  chmod 500 \"{metadata_dir_to_lock}\"\n"
+            f'if [ "${{1-}}" = "branch" ] && [ "${{3-}}" = "{branch}" ]; then\n'
+            f'  chmod 500 "{metadata_dir_to_lock}"\n'
             "fi\n"
         )
 
@@ -47,11 +47,11 @@ def _write_git_passthrough_with_update_ref_failure(
         "#!/bin/sh\n"
         "set -eu\n"
         f"{lock_metadata_snippet}"
-        f"if [ \"${{1-}}\" = \"update-ref\" ] && [ \"${{2-}}\" = \"refs/heads/{branch}\" ]; then\n"
+        f'if [ "${{1-}}" = "update-ref" ] && [ "${{2-}}" = "refs/heads/{branch}" ]; then\n'
         "  printf 'simulated update-ref failure\\n' >&2\n"
         "  exit 1\n"
         "fi\n"
-        f"exec \"{git_executable}\" \"$@\"\n"
+        f'exec "{git_executable}" "$@"\n'
     )
     script_path.chmod(0o755)
 
@@ -82,7 +82,12 @@ def test_cli_delete_reports_worktree_recovery_when_rollback_is_partial(
     extra_worktree = tmp_path / "extra-delete"
     _git(
         cwd=repo,
-        args=["worktree", "add", str(extra_worktree), "feature/delete-worktree-rollback"],
+        args=[
+            "worktree",
+            "add",
+            str(extra_worktree),
+            "feature/delete-worktree-rollback",
+        ],
     )
 
     result = subprocess.run(
@@ -120,8 +125,8 @@ def test_cli_prune_reports_worktree_recovery_when_rollback_is_partial(
     gh_path.write_text(
         "#!/bin/sh\n"
         "set -eu\n"
-        "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n"
-        "  printf '[{\"state\":\"MERGED\",\"isDraft\":false,\"title\":\"Merged\",\"url\":\"https://example.com/pr/1\"}]'\n"
+        'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then\n'
+        '  printf \'[{"state":"MERGED","isDraft":false,"title":"Merged","url":"https://example.com/pr/1"}]\'\n'
         "  exit 0\n"
         "fi\n"
         "exit 1\n"
@@ -148,7 +153,12 @@ def test_cli_prune_reports_worktree_recovery_when_rollback_is_partial(
     extra_worktree = tmp_path / "extra-prune"
     _git(
         cwd=repo,
-        args=["worktree", "add", str(extra_worktree), "feature/prune-worktree-rollback"],
+        args=[
+            "worktree",
+            "add",
+            str(extra_worktree),
+            "feature/prune-worktree-rollback",
+        ],
     )
 
     result = subprocess.run(
@@ -238,8 +248,8 @@ def test_cli_prune_reports_branch_recovery_when_branch_restore_rollback_fails(
     gh_path.write_text(
         "#!/bin/sh\n"
         "set -eu\n"
-        "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n"
-        "  printf '[{\"state\":\"MERGED\",\"isDraft\":false,\"title\":\"Merged\",\"url\":\"https://example.com/pr/1\"}]'\n"
+        'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then\n'
+        '  printf \'[{"state":"MERGED","isDraft":false,"title":"Merged","url":"https://example.com/pr/1"}]\'\n'
         "  exit 0\n"
         "fi\n"
         "exit 1\n"

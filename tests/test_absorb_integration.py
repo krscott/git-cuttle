@@ -97,7 +97,9 @@ def test_absorb_explicit_target_moves_post_merge_commits_to_target_parent(
         args=["show", "-s", "--format=%P", "integration/main-release"],
     ).stdout.split()
     assert len(merge_parents) == 2
-    release_head = _git(cwd=repo, args=["rev-parse", "--verify", "release"]).stdout.strip()
+    release_head = _git(
+        cwd=repo, args=["rev-parse", "--verify", "release"]
+    ).stdout.strip()
     assert merge_parents[1] == release_head
 
     assert result.changed
@@ -197,8 +199,7 @@ def test_absorb_reports_explicit_target_rebase_conflict_recovery_guidance(
 
     assert exc_info.value.code == "absorb-rebase-failed"
     assert (
-        "resolve conflicts, then run `git rebase --continue`"
-        in exc_info.value.guidance
+        "resolve conflicts, then run `git rebase --continue`" in exc_info.value.guidance
     )
     assert (
         "or run `git rebase --abort` to restore a clean git state before retrying"

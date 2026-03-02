@@ -260,12 +260,9 @@ def test_create_standard_workspace_rolls_back_git_state_when_metadata_write_fail
 
     def fail_once_for_new_workspace(metadata: WorkspacesMetadata) -> None:
         nonlocal did_fail
-        if (
-            not did_fail
-            and any(
-                "feature/new-rollback" in repo_meta.workspaces
-                for repo_meta in metadata.repos.values()
-            )
+        if not did_fail and any(
+            "feature/new-rollback" in repo_meta.workspaces
+            for repo_meta in metadata.repos.values()
         ):
             did_fail = True
             raise RuntimeError("simulated metadata write failure")
