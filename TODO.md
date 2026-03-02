@@ -62,7 +62,7 @@ implementation work and user-visible automated test coverage.
   deterministic partial-state recovery output, with integration tests that
   inject failures mid-transaction and during rollback.
 
-- [ ] [P0] Story: Finalize metadata lifecycle behavior through CLI flows.
+- [x] [P0] Story: Finalize metadata lifecycle behavior through CLI flows.
   Include auto-tracking for mutating commands only, no-tracking side effects for
   read-only commands, migration + backup behavior in real command execution, and
   integration tests that verify persistence invariants over repeated runs.
