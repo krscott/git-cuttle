@@ -3,7 +3,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from git_cuttle.errors import AppError
+from git_cuttle.git_ops import (
+    backup_ref_for_branch,
+    create_backup_refs_for_branches,
+    remove_backup_refs,
+)
 from git_cuttle.metadata_manager import WorkspaceMetadata
+from git_cuttle.transaction import Transaction, TransactionExecutionError, TransactionStep
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -112,61 +118,62 @@ def update_octopus_workspace(
 
     _ensure_workspace_clean_for_octopus_update(workspace=workspace)
     original_branch = _current_branch(repo_root=repo_root)
-
-    updated_parent_refs = tuple(
-        _update_octopus_parent(
-            repo_root=repo_root,
-            parent_ref=parent_ref,
-        )
-        for parent_ref in workspace.octopus_parents
-    )
-
     before_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
-    replay_commits = _octopus_replay_commits(
-        repo_root=repo_root,
-        branch=workspace.branch,
-        parent_refs=updated_parent_refs,
+    updated_parent_refs = tuple(workspace.octopus_parents)
+    replay_commits: list[str] = []
+    touched_branches = (*workspace.octopus_parents, workspace.branch)
+    transaction = Transaction()
+
+    transaction.add_step(
+        _backup_refs_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            branches=touched_branches,
+        )
+    )
+    for parent_ref in workspace.octopus_parents:
+        transaction.add_step(
+            _update_parent_step(
+                repo_root=repo_root,
+                transaction=transaction,
+                parent_ref=parent_ref,
+            )
+        )
+    transaction.add_step(
+        _rebuild_octopus_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            workspace=workspace,
+            replay_commits=replay_commits,
+            parent_refs=updated_parent_refs,
+        )
+    )
+    transaction.add_step(
+        _cleanup_backup_refs_step(
+            repo_root=repo_root,
+            transaction=transaction,
+            branches=touched_branches,
+        )
     )
 
-    _checkout_branch(repo_root=repo_root, branch=workspace.branch)
     try:
         try:
-            _git(
-                repo_root=repo_root,
-                args=["reset", "--hard", updated_parent_refs[0]],
-                code="octopus-update-reset-failed",
-                message="failed to reset octopus workspace branch to first parent",
-            )
-            _git(
-                repo_root=repo_root,
-                args=[
-                    "merge",
-                    "--no-ff",
-                    "-m",
-                    f"Rebuild octopus workspace {workspace.branch}",
-                    *updated_parent_refs[1:],
-                ],
-                code="octopus-update-merge-failed",
-                message="failed to rebuild octopus merge commit",
-            )
-
-            if replay_commits:
-                _git(
-                    repo_root=repo_root,
-                    args=["cherry-pick", *replay_commits],
-                    code="octopus-update-replay-failed",
-                    message="failed to replay post-merge commits onto rebuilt octopus branch",
-                )
-        except AppError as error:
-            _restore_octopus_branch_after_failure(
-                repo_root=repo_root,
-                branch=workspace.branch,
-                original_oid=before_oid,
-                cause=error,
-            )
-            raise
+            transaction.run()
+        except TransactionExecutionError as error:
+            if isinstance(error.cause, AppError):
+                raise error.cause
+            raise AppError(
+                code="octopus-update-failed",
+                message="octopus update failed",
+                details=str(error.cause),
+            ) from error
     finally:
-        if original_branch is not None and original_branch != workspace.branch:
+        current_branch = _current_branch(repo_root=repo_root)
+        if (
+            original_branch is not None
+            and current_branch is not None
+            and original_branch != current_branch
+        ):
             _checkout_branch(repo_root=repo_root, branch=original_branch)
 
     after_oid = _branch_head(repo_root=repo_root, branch=workspace.branch)
@@ -177,6 +184,218 @@ def update_octopus_workspace(
         parent_refs=updated_parent_refs,
         replayed_commits=tuple(replay_commits),
     )
+
+
+def _backup_refs_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    branches: tuple[str, ...],
+) -> TransactionStep:
+
+    unique_branches = tuple(dict.fromkeys(branches))
+    recovery_commands = tuple(
+        _restore_backup_command(txn_id=transaction.txn_id, branch=branch)
+        for branch in unique_branches
+    )
+    return TransactionStep(
+        name="backup-refs",
+        apply=lambda: _create_backup_refs(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branches=unique_branches,
+        ),
+        rollback=lambda: remove_backup_refs(txn_id=transaction.txn_id, cwd=repo_root),
+        recovery_commands=recovery_commands,
+    )
+
+
+def _update_parent_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    parent_ref: str,
+) -> TransactionStep:
+    def apply_parent_update() -> None:
+        _update_octopus_parent(repo_root=repo_root, parent_ref=parent_ref)
+
+    return TransactionStep(
+        name=f"update-parent:{parent_ref}",
+        apply=apply_parent_update,
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=parent_ref,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=parent_ref),
+        ),
+    )
+
+
+def _rebuild_octopus_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    workspace: WorkspaceMetadata,
+    replay_commits: list[str],
+    parent_refs: tuple[str, ...],
+) -> TransactionStep:
+
+    return TransactionStep(
+        name=f"rebuild-octopus:{workspace.branch}",
+        apply=lambda: _rebuild_octopus_branch(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=workspace.branch,
+            parent_refs=parent_refs,
+            replay_commits=replay_commits,
+        ),
+        rollback=lambda: _restore_branch_from_backup_ref(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            branch=workspace.branch,
+        ),
+        recovery_commands=(
+            _restore_backup_command(txn_id=transaction.txn_id, branch=workspace.branch),
+        ),
+    )
+
+
+def _cleanup_backup_refs_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    branches: tuple[str, ...],
+) -> TransactionStep:
+
+    unique_branches = tuple(dict.fromkeys(branches))
+    return TransactionStep(
+        name="cleanup-backup-refs",
+        apply=lambda: remove_backup_refs(txn_id=transaction.txn_id, cwd=repo_root),
+        rollback=lambda: None,
+        recovery_commands=tuple(
+            _delete_backup_ref_command(txn_id=transaction.txn_id, branch=branch)
+            for branch in unique_branches
+        ),
+    )
+
+
+def _create_backup_refs(
+    *,
+    repo_root: Path,
+    txn_id: str,
+    branches: tuple[str, ...],
+) -> None:
+    try:
+        _ = create_backup_refs_for_branches(
+            txn_id=txn_id,
+            branches=list(branches),
+            cwd=repo_root,
+        )
+    except RuntimeError as error:
+        raise AppError(
+            code="octopus-update-backup-failed",
+            message="failed to create transactional backup refs for octopus update",
+            details=str(error),
+        ) from error
+
+
+def _rebuild_octopus_branch(
+    *,
+    repo_root: Path,
+    txn_id: str,
+    branch: str,
+    parent_refs: tuple[str, ...],
+    replay_commits: list[str],
+) -> None:
+    replay_commits.clear()
+    replay_commits.extend(
+        _octopus_replay_commits(
+            repo_root=repo_root,
+            branch=branch,
+            parent_refs=parent_refs,
+        )
+    )
+
+    try:
+        _checkout_branch(repo_root=repo_root, branch=branch)
+        _git(
+            repo_root=repo_root,
+            args=["reset", "--hard", parent_refs[0]],
+            code="octopus-update-reset-failed",
+            message="failed to reset octopus workspace branch to first parent",
+        )
+        _git(
+            repo_root=repo_root,
+            args=[
+                "merge",
+                "--no-ff",
+                "-m",
+                f"Rebuild octopus workspace {branch}",
+                *parent_refs[1:],
+            ],
+            code="octopus-update-merge-failed",
+            message="failed to rebuild octopus merge commit",
+        )
+
+        if replay_commits:
+            _git(
+                repo_root=repo_root,
+                args=["cherry-pick", *replay_commits],
+                code="octopus-update-replay-failed",
+                message="failed to replay post-merge commits onto rebuilt octopus branch",
+            )
+    except AppError as error:
+        try:
+            _restore_branch_from_backup_ref(
+                repo_root=repo_root,
+                txn_id=txn_id,
+                branch=branch,
+            )
+        except Exception as rollback_error:
+            raise AppError(
+                code="octopus-update-rollback-failed",
+                message="octopus update failed and rollback could not restore workspace branch",
+                details=(
+                    f"update error [{error.code}]: {error.details or error.message}; "
+                    f"rollback error: {rollback_error}"
+                ),
+                guidance=(
+                    _restore_backup_command(txn_id=txn_id, branch=branch),
+                ),
+            ) from error
+        raise
+
+
+def _restore_branch_from_backup_ref(*, repo_root: Path, txn_id: str, branch: str) -> None:
+    backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
+    backup_oid = _rev_parse(repo_root=repo_root, ref=backup_ref)
+    if backup_oid is None:
+        raise RuntimeError(f"backup ref does not exist: {backup_ref}")
+
+    _git(
+        repo_root=repo_root,
+        args=["reset", "--hard"],
+        code="octopus-update-rollback-failed",
+        message="failed to clear git state before restoring backup refs",
+    )
+    _checkout_branch(repo_root=repo_root, branch=branch)
+    _git(
+        repo_root=repo_root,
+        args=["reset", "--hard", backup_oid],
+        code="octopus-update-rollback-failed",
+        message="failed to restore octopus branch from backup ref",
+    )
+
+
+def _restore_backup_command(*, txn_id: str, branch: str) -> str:
+    backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
+    return f"git checkout {branch} && git reset --hard {backup_ref}"
+
+
+def _delete_backup_ref_command(*, txn_id: str, branch: str) -> str:
+    return f"git update-ref -d {backup_ref_for_branch(txn_id=txn_id, branch=branch)}"
 
 
 def _branch_head(*, repo_root: Path, branch: str) -> str:
@@ -277,36 +496,6 @@ def _ensure_workspace_clean_for_octopus_update(*, workspace: WorkspaceMetadata) 
         details=str(worktree_path),
         guidance=("commit or stash changes, then retry update",),
     )
-
-
-def _restore_octopus_branch_after_failure(
-    *,
-    repo_root: Path,
-    branch: str,
-    original_oid: str,
-    cause: AppError,
-) -> None:
-    try:
-        _git(
-            repo_root=repo_root,
-            args=["reset", "--hard", original_oid],
-            code="octopus-update-rollback-failed",
-            message="failed to restore octopus workspace branch after update failure",
-        )
-    except AppError as rollback_error:
-        cause_details = cause.details or cause.message
-        rollback_details = rollback_error.details or rollback_error.message
-        raise AppError(
-            code="octopus-update-rollback-failed",
-            message="octopus update failed and rollback could not restore the branch",
-            details=(
-                f"update error [{cause.code}]: {cause_details}; "
-                f"rollback error: {rollback_details}"
-            ),
-            guidance=(
-                f"checkout {branch} and run `git reset --hard {original_oid}` to recover",
-            ),
-        ) from cause
 
 
 def _is_merge_commit(*, repo_root: Path, commit: str) -> bool:

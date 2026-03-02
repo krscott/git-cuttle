@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P0] Story: Make `update` octopus flow fully transactional across all touched refs.
+- [x] [P0] Story: Make `update` octopus flow fully transactional across all touched refs.
   `DESIGN.md` (Merge strategy) requires multi-branch operations to be atomic,
   with backup refs under `refs/gitcuttle/txn/<txn-id>/...` and full rollback on
   failure. `git_cuttle/update.py::update_octopus_workspace` currently rebases

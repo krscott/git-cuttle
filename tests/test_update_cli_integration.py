@@ -333,3 +333,101 @@ def test_cli_update_rebuilds_octopus_workspace_and_replays_commits(
 
     metadata_payload = json.loads(metadata_path.read_text())
     assert metadata_payload["version"] == 1
+
+
+@pytest.mark.integration
+def test_cli_update_octopus_rolls_back_parent_refs_and_cleans_backup_refs(
+    tmp_path: Path,
+) -> None:
+    bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "release"])
+    (local / "release.txt").write_text("release v1\n")
+    _git(cwd=local, args=["add", "release.txt"])
+    _git(cwd=local, args=["commit", "-m", "release v1"])
+    _git(cwd=local, args=["push", "-u", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "main"])
+    _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
+
+    before_main_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/main"],
+    ).stdout.strip()
+    before_release_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/release"],
+    ).stdout.strip()
+    before_octopus_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/integration/main-release"],
+    ).stdout.strip()
+
+    upstream_writer = tmp_path / "upstream-writer"
+    _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
+    _git(cwd=upstream_writer, args=["config", "user.name", "Test User"])
+    _git(cwd=upstream_writer, args=["config", "user.email", "test@example.com"])
+
+    _git(cwd=upstream_writer, args=["checkout", "main"])
+    (upstream_writer / "README.md").write_text("hello from main\n")
+    _git(cwd=upstream_writer, args=["add", "README.md"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "main readme change"])
+    _git(cwd=upstream_writer, args=["push", "origin", "main"])
+
+    _git(cwd=upstream_writer, args=["checkout", "release"])
+    (upstream_writer / "README.md").write_text("hello from release\n")
+    _git(cwd=upstream_writer, args=["add", "README.md"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "release readme change"])
+    _git(cwd=upstream_writer, args=["push", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "integration/main-release"])
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    workspace = WorkspaceMetadata(
+        branch="integration/main-release",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="octopus",
+        base_ref="main",
+        octopus_parents=("main", "release"),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=local,
+        default_remote="origin",
+        workspace=workspace,
+    )
+
+    result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
+
+    assert result.returncode == 2
+    assert "error[octopus-update-merge-failed]: failed to rebuild octopus merge commit" in result.stderr
+
+    after_main_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/main"],
+    ).stdout.strip()
+    after_release_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/release"],
+    ).stdout.strip()
+    after_octopus_oid = _git(
+        cwd=local,
+        args=["rev-parse", "--verify", "refs/heads/integration/main-release"],
+    ).stdout.strip()
+
+    assert after_main_oid == before_main_oid
+    assert after_release_oid == before_release_oid
+    assert after_octopus_oid == before_octopus_oid
+
+    backup_refs = _git(
+        cwd=local,
+        args=["for-each-ref", "--format=%(refname)", "refs/gitcuttle/txn"],
+    ).stdout.strip()
+    assert backup_refs == ""
