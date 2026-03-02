@@ -69,7 +69,7 @@ implementation work and user-visible automated test coverage.
   Also validate metadata path/fallback behavior used in implementation and keep
   docs/spec wording consistent.
 
-- [ ] [P2] Story: Align user documentation with shipped CLI behavior.
+- [x] [P2] Story: Align user documentation with shipped CLI behavior.
   Include README command examples, troubleshooting guidance for blocked states,
   and test-backed validation of documented command output snippets where
   practical.
