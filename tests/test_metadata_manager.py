@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,19 @@ from git_cuttle.metadata_manager import (
     WorkspacesMetadata,
     default_metadata_path,
 )
+
+
+def _init_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], check=True, cwd=path)
+    subprocess.run(["git", "config", "user.name", "Test User"], check=True, cwd=path)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        check=True,
+        cwd=path,
+    )
+    (path / "README.md").write_text("repo\n")
+    subprocess.run(["git", "add", "README.md"], check=True, cwd=path)
+    subprocess.run(["git", "commit", "-m", "init"], check=True, cwd=path)
 
 
 def _workspace(
@@ -266,3 +280,50 @@ def test_read_rejects_newer_schema_version(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unsupported metadata schema version"):
         manager.read()
+
+
+def test_ensure_repo_tracked_creates_repo_entry(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@example.com:acme/repo.git"],
+        check=True,
+        cwd=repo,
+    )
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+
+    manager.ensure_repo_tracked(cwd=repo, now=lambda: "2026-03-01T00:00:00Z")
+
+    metadata = manager.read()
+    assert len(metadata.repos) == 1
+    tracked_repo = next(iter(metadata.repos.values()))
+    assert tracked_repo.repo_root == repo.resolve(strict=False)
+    assert tracked_repo.default_remote == "origin"
+    assert tracked_repo.tracked_at == "2026-03-01T00:00:00Z"
+    assert tracked_repo.updated_at == "2026-03-01T00:00:00Z"
+    assert tracked_repo.workspaces == {}
+
+
+def test_ensure_repo_tracked_updates_existing_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+
+    manager.ensure_repo_tracked(cwd=repo, now=lambda: "2026-03-01T00:00:00Z")
+    subprocess.run(
+        ["git", "remote", "add", "upstream", "git@example.com:acme/upstream.git"],
+        check=True,
+        cwd=repo,
+    )
+    manager.ensure_repo_tracked(cwd=repo, now=lambda: "2026-03-02T00:00:00Z")
+
+    metadata = manager.read()
+    tracked_repo = next(iter(metadata.repos.values()))
+    assert tracked_repo.default_remote == "upstream"
+    assert tracked_repo.tracked_at == "2026-03-01T00:00:00Z"
+    assert tracked_repo.updated_at == "2026-03-02T00:00:00Z"

@@ -55,7 +55,12 @@ Current orchestration (`git_cuttle/orchestrator.py`):
    - `REBASE_HEAD`
    - `rebase-apply`
    - `rebase-merge`
-3. Initialize `MetadataManager` (no command-level metadata mutation yet).
+3. Auto-track repo metadata only for mutating command identifiers:
+   - `new`
+   - `delete`
+   - `prune`
+   - `update`
+   - `absorb`
 4. If `--destination` is set, print resolved current directory and return.
 5. Otherwise print greeting `Hello, <name>!`.
 
@@ -102,6 +107,10 @@ Implemented guarantees:
 - repo key identity must equal canonical git-dir realpath
 - workspace key identity must equal branch name
 - timestamp and structural invariant validation
+- `ensure_repo_tracked(...)` creates/updates repo entries with deterministic
+  timestamp behavior while preserving existing `tracked_at`
+- auto-tracking chooses `origin` as default remote when available, otherwise
+  the first remote name in sorted order
 
 ## Workspace Path Helpers
 

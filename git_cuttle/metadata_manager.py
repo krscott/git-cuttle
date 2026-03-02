@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal, cast
 
+from git_cuttle.git_ops import canonical_git_dir, default_remote_name, repo_root
+
 
 SCHEMA_VERSION = 1
 WorkspaceKind = Literal["standard", "octopus"]
@@ -77,6 +79,35 @@ class MetadataManager:
         self.ensure_parent_dir()
         serialized = json.dumps(_serialize_workspaces_metadata(metadata), indent=2)
         _atomic_write_text(self.path, serialized)
+
+    def ensure_repo_tracked(self, *, cwd: Path, now: Callable[[], str] | None = None) -> None:
+        tracked_git_dir = canonical_git_dir(cwd)
+        tracked_repo_root = repo_root(cwd)
+
+        if tracked_git_dir is None or tracked_repo_root is None:
+            raise ValueError("cannot track repository metadata outside a git repository")
+
+        timestamp = (now or _utc_now_iso)()
+        metadata = self.read()
+        repo_key = str(tracked_git_dir)
+        existing_repo = metadata.repos.get(repo_key)
+
+        updated_repo = RepoMetadata(
+            git_dir=tracked_git_dir,
+            repo_root=tracked_repo_root,
+            default_remote=default_remote_name(cwd),
+            tracked_at=existing_repo.tracked_at if existing_repo is not None else timestamp,
+            updated_at=timestamp,
+            workspaces=existing_repo.workspaces if existing_repo is not None else {},
+        )
+
+        repos = dict(metadata.repos)
+        repos[repo_key] = updated_repo
+        self.write(WorkspacesMetadata(version=metadata.version, repos=repos))
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

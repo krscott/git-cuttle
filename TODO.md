@@ -25,7 +25,7 @@
 ## Repository Context and Tracking
 
 - [x] Implement repo context detection and hard error outside git repos.
-- [ ] Implement auto-tracking for mutating commands only (`new`, `delete`, `prune`, `update`, `absorb`).
+- [x] Implement auto-tracking for mutating commands only (`new`, `delete`, `prune`, `update`, `absorb`).
 - [x] Ensure commands behave consistently from repo root and worktree directories.
 
 ## Command Implementation

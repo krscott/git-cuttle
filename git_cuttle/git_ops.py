@@ -26,6 +26,20 @@ def in_git_repo(cwd: Path | None = None) -> bool:
     return result.returncode == 0
 
 
+def repo_root(cwd: Path | None = None) -> Path | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None
+
+    return Path(result.stdout.strip()).resolve(strict=False)
+
+
 def git_dir(cwd: Path | None = None) -> Path | None:
     result = subprocess.run(
         ["git", "rev-parse", "--git-dir"],
@@ -43,6 +57,32 @@ def git_dir(cwd: Path | None = None) -> Path | None:
 
     base_dir = cwd or Path.cwd()
     return (base_dir / candidate).resolve(strict=False)
+
+
+def canonical_git_dir(cwd: Path | None = None) -> Path | None:
+    git_dir_path = git_dir(cwd)
+    if git_dir_path is None:
+        return None
+    return git_dir_path.resolve(strict=False)
+
+
+def default_remote_name(cwd: Path | None = None) -> str | None:
+    result = subprocess.run(
+        ["git", "remote"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None
+
+    remotes = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not remotes:
+        return None
+    if "origin" in remotes:
+        return "origin"
+    return sorted(remotes)[0]
 
 
 def in_progress_operation(cwd: Path | None = None) -> str | None:
