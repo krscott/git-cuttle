@@ -245,6 +245,103 @@ def test_cli_new_collision_uses_deterministic_paths_and_unsanitized_metadata_key
 
 
 @pytest.mark.integration
+def test_cli_new_rejects_branch_when_name_exists_on_default_remote(
+    tmp_path: pathlib.Path,
+) -> None:
+    bare_remote = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", str(bare_remote)], check=True, cwd=tmp_path)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    subprocess.run(["git", "remote", "add", "origin", str(bare_remote)], check=True, cwd=repo)
+    subprocess.run(["git", "push", "-u", "origin", "main"], check=True, cwd=repo)
+
+    upstream_writer = tmp_path / "upstream-writer"
+    subprocess.run(["git", "clone", str(bare_remote), str(upstream_writer)], check=True, cwd=tmp_path)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        check=True,
+        cwd=upstream_writer,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        check=True,
+        cwd=upstream_writer,
+    )
+    subprocess.run(
+        ["git", "checkout", "-b", "feature/existing-remote"],
+        check=True,
+        cwd=upstream_writer,
+    )
+    (upstream_writer / "upstream.txt").write_text("remote branch\n")
+    subprocess.run(["git", "add", "upstream.txt"], check=True, cwd=upstream_writer)
+    subprocess.run(
+        ["git", "commit", "-m", "add remote branch"],
+        check=True,
+        cwd=upstream_writer,
+    )
+    subprocess.run(
+        ["git", "push", "-u", "origin", "feature/existing-remote"],
+        check=True,
+        cwd=upstream_writer,
+    )
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/existing-remote", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[branch-already-exists]: target branch already exists" in result.stderr
+    assert "details: feature/existing-remote" in result.stderr
+
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
+    tracked_repo = next(iter(metadata.repos.values()))
+    assert "feature/existing-remote" not in tracked_repo.workspaces
+
+
+@pytest.mark.integration
+def test_cli_new_checks_branch_conflicts_locally_without_remote_context(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    subprocess.run(
+        ["git", "checkout", "-b", "feature/existing-local"],
+        check=True,
+        cwd=repo,
+    )
+    subprocess.run(["git", "checkout", "main"], check=True, cwd=repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/existing-local", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[branch-already-exists]: target branch already exists" in result.stderr
+    assert "details: feature/existing-local" in result.stderr
+    assert "error[remote-branch-check-failed]" not in result.stderr
+
+
+@pytest.mark.integration
 def test_cli_new_invalid_base_ref_shows_actionable_hint(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

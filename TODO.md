@@ -5,7 +5,7 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Add missing `new` branch-conflict integration coverage.
+- [x] [P1] Story: Add missing `new` branch-conflict integration coverage.
   `DESIGN.md` requires `gitcuttle new` to reject target branches that already
   exist locally or on tracked remotes, and to use local-only checks when no
   remote context exists. Add CLI integration tests for these branches and update
