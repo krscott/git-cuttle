@@ -21,7 +21,7 @@ implementation work and user-visible automated test coverage.
   commit) and enforce remote branch-existence checks when upstream context
   exists.
 
-- [ ] [P1] Story: Deliver `gitcuttle list` end-to-end with stable table rendering and
+- [x] [P1] Story: Deliver `gitcuttle list` end-to-end with stable table rendering and
   graceful unknown markers.
   Include metadata loading, remote ahead/behind + PR status resolution,
   short-TTL caching behavior, and integration tests for online, offline,

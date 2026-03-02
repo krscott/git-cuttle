@@ -6,6 +6,7 @@ import pytest
 from git_cuttle.metadata_manager import RepoMetadata, WorkspaceMetadata
 from git_cuttle.remote_status import (
     PullRequestStatus,
+    PullRequestStatusCache,
     RemoteAheadBehindStatus,
     RemoteStatusCache,
     pull_request_status_for_repo,
@@ -267,6 +268,45 @@ def test_pull_request_status_for_workspace_reads_open_pr_from_gh(
     assert status.known
 
 
+def test_pull_request_status_for_workspace_reads_draft_pr_from_gh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        _ = cwd
+        if args == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="git@github.com:acme/repo.git\n")
+        if args[:3] == ["gh", "pr", "list"]:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout='[{"state":"OPEN","isDraft":true,"title":"WIP feature","url":"https://github.com/acme/repo/pull/99"}]',
+            )
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    status = pull_request_status_for_workspace(
+        repo_root=tmp_path,
+        workspace=_workspace("feature", tracked_remote="origin"),
+        default_remote="origin",
+    )
+
+    assert status.state == "draft"
+    assert status.title == "WIP feature"
+    assert status.known
+
+
 def test_pull_request_status_for_workspace_returns_unknown_when_no_pr(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -387,3 +427,69 @@ def test_pull_request_status_for_repo_maps_each_workspace(
 
     assert statuses["feature-a"].state == "merged"
     assert statuses["feature-b"].state == "closed"
+
+
+def test_pull_request_status_cache_reuses_value_within_ttl(tmp_path: Path) -> None:
+    now_values = iter([100.0, 120.0])
+    cache = PullRequestStatusCache(now=lambda: next(now_values))
+    repo = RepoMetadata(
+        git_dir=(tmp_path / "repo.git").resolve(strict=False),
+        repo_root=(tmp_path / "repo").resolve(strict=False),
+        default_remote="origin",
+        tracked_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+        workspaces={},
+    )
+    calls = {"count": 0}
+
+    def resolver(_: RepoMetadata) -> dict[str, PullRequestStatus]:
+        calls["count"] += 1
+        return {
+            "feature": PullRequestStatus(
+                branch="feature",
+                upstream_ref="origin/feature",
+                state="open",
+                title=f"PR {calls['count']}",
+                url="https://example.test/pr/1",
+            )
+        }
+
+    first = cache.statuses_for_repo(repo=repo, resolver=resolver)
+    second = cache.statuses_for_repo(repo=repo, resolver=resolver)
+
+    assert calls["count"] == 1
+    assert first["feature"].title == "PR 1"
+    assert second["feature"].title == "PR 1"
+
+
+def test_pull_request_status_cache_refreshes_after_ttl(tmp_path: Path) -> None:
+    now_values = iter([100.0, 161.0])
+    cache = PullRequestStatusCache(now=lambda: next(now_values))
+    repo = RepoMetadata(
+        git_dir=(tmp_path / "repo.git").resolve(strict=False),
+        repo_root=(tmp_path / "repo").resolve(strict=False),
+        default_remote="origin",
+        tracked_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+        workspaces={},
+    )
+    calls = {"count": 0}
+
+    def resolver(_: RepoMetadata) -> dict[str, PullRequestStatus]:
+        calls["count"] += 1
+        return {
+            "feature": PullRequestStatus(
+                branch="feature",
+                upstream_ref="origin/feature",
+                state="open",
+                title=f"PR {calls['count']}",
+                url="https://example.test/pr/1",
+            )
+        }
+
+    first = cache.statuses_for_repo(repo=repo, resolver=resolver)
+    second = cache.statuses_for_repo(repo=repo, resolver=resolver)
+
+    assert calls["count"] == 2
+    assert first["feature"].title == "PR 1"
+    assert second["feature"].title == "PR 2"

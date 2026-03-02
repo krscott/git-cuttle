@@ -86,10 +86,14 @@ def test_cli_per_command_invocation_paths(tmp_path: pathlib.Path) -> None:
     _init_repo(repo)
 
     command_expectations = [
-        (["list"], "list:invoked\n"),
         (["delete", "feature/demo", "--dry-run"], "delete:planned\n"),
         (["prune", "--dry-run"], "prune:planned\n"),
     ]
+
+    list_result = subprocess.run(["gitcuttle", "list"], capture_output=True, text=True, cwd=repo)
+    assert list_result.returncode == 0
+    assert "REPO" in list_result.stdout
+    assert "(no tracked workspaces)" in list_result.stdout
 
     for args, expected in command_expectations:
         result = subprocess.run(["gitcuttle", *args], capture_output=True, text=True, cwd=repo)
@@ -103,6 +107,12 @@ def test_cli_json_invocation_paths(tmp_path: pathlib.Path) -> None:
     repo.mkdir()
     _init_repo(repo)
 
+    list_result = subprocess.run(
+        ["gitcuttle", "list", "--json"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
     delete_result = subprocess.run(
         ["gitcuttle", "delete", "feature/demo", "--dry-run", "--json"],
         capture_output=True,
@@ -116,6 +126,8 @@ def test_cli_json_invocation_paths(tmp_path: pathlib.Path) -> None:
         cwd=repo,
     )
 
+    assert list_result.returncode == 0
+    assert list_result.stdout.strip() == '{"workspaces":[]}'
     assert delete_result.returncode == 0
     assert delete_result.stdout.strip() == '{"command":"delete","status":"planned"}'
     assert prune_result.returncode == 0

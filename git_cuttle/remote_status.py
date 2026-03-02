@@ -21,7 +21,7 @@ class RemoteAheadBehindStatus:
         return self.ahead is not None and self.behind is not None
 
 
-PrState = Literal["open", "closed", "merged", "unknown", "unavailable"]
+PrState = Literal["draft", "open", "closed", "merged", "unknown", "unavailable"]
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -34,14 +34,19 @@ class PullRequestStatus:
 
     @property
     def known(self) -> bool:
-        return self.state in {"open", "closed", "merged"}
+        return self.state in {"draft", "open", "closed", "merged"}
 
 
 StatusResolver = Callable[[RepoMetadata], dict[str, "RemoteAheadBehindStatus"]]
+PrStatusResolver = Callable[[RepoMetadata], dict[str, "PullRequestStatus"]]
 
 
 def _default_repo_status_resolver(repo: RepoMetadata) -> dict[str, RemoteAheadBehindStatus]:
     return remote_ahead_behind_for_repo(repo=repo)
+
+
+def _default_repo_pr_status_resolver(repo: RepoMetadata) -> dict[str, PullRequestStatus]:
+    return pull_request_status_for_repo(repo=repo)
 
 
 @dataclass(kw_only=True)
@@ -58,6 +63,33 @@ class RemoteStatusCache:
         repo: RepoMetadata,
         resolver: StatusResolver = _default_repo_status_resolver,
     ) -> dict[str, RemoteAheadBehindStatus]:
+        cache_key = str(repo.git_dir)
+        cached = self._entries.get(cache_key)
+        now = self.now()
+        if cached is not None:
+            fetched_at, statuses = cached
+            if now - fetched_at < self.ttl_seconds:
+                return statuses
+
+        statuses = resolver(repo)
+        self._entries[cache_key] = (now, statuses)
+        return statuses
+
+
+@dataclass(kw_only=True)
+class PullRequestStatusCache:
+    ttl_seconds: float = 60.0
+    now: Callable[[], float] = time.time
+
+    def __post_init__(self) -> None:
+        self._entries: dict[str, tuple[float, dict[str, PullRequestStatus]]] = {}
+
+    def statuses_for_repo(
+        self,
+        *,
+        repo: RepoMetadata,
+        resolver: PrStatusResolver = _default_repo_pr_status_resolver,
+    ) -> dict[str, PullRequestStatus]:
         cache_key = str(repo.git_dir)
         cached = self._entries.get(cache_key)
         now = self.now()
@@ -235,7 +267,7 @@ def _pull_request_status_from_gh(
                 "--state",
                 "all",
                 "--json",
-                "state,title,url",
+                "state,isDraft,title,url",
                 "--limit",
                 "1",
             ],
@@ -295,6 +327,7 @@ def _pull_request_status_from_gh(
     first = cast(dict[str, object], first_raw)
 
     state_raw = first.get("state")
+    is_draft_raw = first.get("isDraft")
     title = first.get("title")
     url = first.get("url")
     state_map: dict[str, PrState] = {
@@ -303,6 +336,8 @@ def _pull_request_status_from_gh(
         "MERGED": "merged",
     }
     mapped_state = state_map.get(state_raw if isinstance(state_raw, str) else "", "unknown")
+    if mapped_state == "open" and is_draft_raw is True:
+        mapped_state = "draft"
 
     return PullRequestStatus(
         branch=branch,

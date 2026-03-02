@@ -5,13 +5,22 @@ from typing import Protocol
 from git_cuttle.absorb import absorb_octopus_workspace
 from git_cuttle.errors import AppError
 from git_cuttle.git_ops import canonical_git_dir, in_git_repo, in_progress_operation, repo_root
+from git_cuttle.list_output import render_workspace_table, rows_for_repo
 from git_cuttle.lib import Options
 from git_cuttle.metadata_manager import MetadataManager, RepoMetadata, WorkspaceMetadata
 from git_cuttle.new import create_octopus_workspace, create_standard_workspace
+from git_cuttle.remote_status import (
+    PullRequestStatusCache,
+    RemoteStatusCache,
+    pull_request_status_for_repo,
+    remote_ahead_behind_for_repo,
+)
 from git_cuttle.update import update_non_octopus_workspace, update_octopus_workspace
 
 
 MUTATING_COMMANDS = frozenset({"new", "delete", "prune", "update", "absorb"})
+REMOTE_STATUS_CACHE = RemoteStatusCache()
+PULL_REQUEST_STATUS_CACHE = PullRequestStatusCache()
 
 
 class RepoTracker(Protocol):
@@ -75,7 +84,8 @@ def _dispatch_command(
         _run_new(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "list":
-        _run_list(opts=opts)
+        manager = metadata_manager if isinstance(metadata_manager, MetadataManager) else MetadataManager()
+        _run_list(opts=opts, cwd=cwd, metadata_manager=manager)
         return
     if command_name == "delete":
         _run_delete(opts=opts)
@@ -131,11 +141,62 @@ def _run_new(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> 
     print(f"hint: cd {destination}")
 
 
-def _run_list(*, opts: Options) -> None:
-    if opts.json_output:
-        print('{"command":"list","status":"invoked"}')
+def _run_list(*, opts: Options, cwd: Path, metadata_manager: MetadataManager) -> None:
+    tracked_repo = _tracked_repo_for_list(cwd=cwd, metadata_manager=metadata_manager)
+
+    if tracked_repo is None:
+        if opts.json_output:
+            print('{"workspaces":[]}')
+            return
+        print(render_workspace_table([]))
         return
-    print("list:invoked")
+
+    remote_statuses = REMOTE_STATUS_CACHE.statuses_for_repo(
+        repo=tracked_repo,
+        resolver=lambda repo: remote_ahead_behind_for_repo(repo=repo),
+    )
+    pr_statuses = PULL_REQUEST_STATUS_CACHE.statuses_for_repo(
+        repo=tracked_repo,
+        resolver=lambda repo: pull_request_status_for_repo(repo=repo),
+    )
+
+    rows = rows_for_repo(
+        repo=tracked_repo,
+        remote_statuses=remote_statuses,
+        pr_statuses=pr_statuses,
+    )
+
+    if opts.json_output:
+        payload = {
+            "workspaces": [
+                {
+                    "repo": row.repo,
+                    "branch": row.branch,
+                    "dirty": row.dirty,
+                    "ahead": row.ahead,
+                    "behind": row.behind,
+                    "pr": row.pull_request,
+                    "description": row.description,
+                    "worktree": row.worktree_path,
+                }
+                for row in rows
+            ]
+        }
+        import json
+
+        print(json.dumps(payload))
+        return
+
+    print(render_workspace_table(rows))
+
+
+def _tracked_repo_for_list(*, cwd: Path, metadata_manager: MetadataManager) -> RepoMetadata | None:
+    repo_git_dir = canonical_git_dir(cwd)
+    if repo_git_dir is None:
+        return None
+
+    metadata = metadata_manager.read()
+    return metadata.repos.get(str(repo_git_dir))
 
 
 def _run_delete(*, opts: Options) -> None:

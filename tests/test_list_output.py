@@ -77,10 +77,11 @@ def test_rows_for_repo_populates_table_columns() -> None:
 
     rendered = render_workspace_table(rows)
     assert all(header in rendered for header in TABLE_HEADERS)
+    assert "repo" in rendered
     assert "feature/alpha" in rendered
-    assert "octopus" in rendered
-    assert "origin/feature/alpha" in rendered
+    assert " ? " in rendered
     assert "open" in rendered
+    assert "Alpha" in rendered
 
 
 def test_rows_for_repo_uses_unknown_markers_for_missing_or_unknown_status() -> None:
@@ -108,7 +109,7 @@ def test_rows_for_repo_uses_unknown_markers_for_missing_or_unknown_status() -> N
 
     rendered = render_workspace_table(rows)
     assert f" {UNKNOWN_MARKER} " in rendered
-    assert "unknown" in rendered
+    assert " ? " in rendered
 
 
 def test_render_workspace_table_handles_empty_rows() -> None:
