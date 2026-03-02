@@ -6,6 +6,16 @@ from typing import Any
 from git_cuttle.lib import Options
 
 
+def add_destination_flag(parser: argparse.ArgumentParser) -> None:
+    """Add shared destination output flag for navigation-style commands."""
+    parser.add_argument(
+        "-d",
+        "--destination",
+        action="store_true",
+        help="print destination path only",
+    )
+
+
 @dataclass(kw_only=True, frozen=True)
 class CliOpts:
     app_opts: Options
@@ -16,11 +26,7 @@ class CliOpts:
         parser = argparse.ArgumentParser()
 
         parser.add_argument("name", nargs="?", default="World", help="Your name")
-        parser.add_argument(
-            "--destination",
-            action="store_true",
-            help="print destination path only",
-        )
+        add_destination_flag(parser)
         parser.add_argument(
             "-v",
             "--verbose",
