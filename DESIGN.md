@@ -52,6 +52,22 @@ In descending order, this project optimizes for:
   - `original_head`: merge commit before refresh.
   - `target_branch`: refreshed merge commit.
 
+## Consistency Invariants
+
+- Every tracked worktree record must be visible in `gitcuttle list`; inconsistent
+  records are shown explicitly as orphan entries rather than silently skipped.
+- `TrackedWorktree(kind="workspace")` is valid only while the corresponding
+  workspace config exists and matches the same branch/workspace pair.
+- `gitcuttle delete --workspace-only` on a linked workspace/worktree pair keeps
+  worktree tracking by converting the record to `kind="branch"` and clearing
+  `workspace_name`.
+- Remote fallback matching for `gitcuttle worktree <branch>` must:
+  - use configured remote names (not first-slash parsing of ref names),
+  - support remote names that contain `/`,
+  - ignore symbolic refs such as `*/HEAD`,
+  - prefer `origin/<branch>` when present,
+  - and fail with ambiguity when multiple non-origin matches remain.
+
 ## Persistence
 
 - Workspace ref: `.git/refs/gitcuttle/<workspace-name>` (points to merge commit).
@@ -68,7 +84,9 @@ In descending order, this project optimizes for:
   - Persists metadata and merge ref.
 - `gitcuttle worktree <branch...> [--name] [--print-path]`
   - Single branch: creates/reuses a managed tracked worktree for the branch.
-  - If local branch is missing, resolves remote branch (prefers `origin`).
+  - If local branch is missing, resolves remote branch by matching against
+    configured remotes (supports remote names containing `/`) and prefers
+    `origin/<branch>`.
   - Multiple branches: runs workspace creation flow then adds tracked worktree.
   - `--print-path` prints only the resulting absolute path on success.
   - On failure in `--print-path` mode, stdout remains empty and errors go to stderr.
@@ -78,11 +96,15 @@ In descending order, this project optimizes for:
 - `gitcuttle update [--continue]`
   - Pulls each parent branch (`git pull --ff-only`) then runs absorb flow.
 - `gitcuttle list`
-  - Lists persisted workspaces and tracked single-branch worktrees.
+  - Lists persisted workspaces and all tracked worktrees.
+  - If workspace-kind tracked metadata exists without a matching workspace config,
+    list shows it as an orphan entry.
 - `gitcuttle delete [workspace-or-branch]`
   - Removes tracked worktree path and tracked metadata when present.
   - Removes workspace metadata/ref when target is a workspace.
   - Supports `--workspace-only` and `--worktree-only` for explicit targeting.
+  - `--workspace-only` preserves linked worktree tracking by converting
+    workspace-kind tracked metadata to branch-kind tracked metadata.
   - If both targets exist but are not the same tracked workspace pair, delete
     fails with an ambiguity error and requires explicit targeting.
 - `gitcuttle status`
