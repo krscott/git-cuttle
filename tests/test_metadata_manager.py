@@ -114,11 +114,46 @@ def test_write_failure_does_not_clobber_existing_metadata(
     assert temp_files == []
 
 
-def test_write_validates_repo_key_matches_git_dir(tmp_path: Path) -> None:
+def test_write_validates_repo_key_matches_canonical_git_dir(tmp_path: Path) -> None:
     manager = MetadataManager(path=tmp_path / "workspaces.json")
 
-    with pytest.raises(ValueError, match="repo key must match repo.git_dir exactly"):
+    with pytest.raises(
+        ValueError, match="repo key must match canonical repo.git_dir realpath"
+    ):
         manager.write(_metadata(repo_key="/repos/demo"))
+
+
+def test_write_validates_repo_git_dir_is_canonical_realpath(tmp_path: Path) -> None:
+    manager = MetadataManager(path=tmp_path / "workspaces.json")
+    real_repo = tmp_path / "real-repo"
+    real_repo.mkdir()
+    (real_repo / ".git").mkdir()
+    symlink_repo = tmp_path / "symlink-repo"
+    symlink_repo.symlink_to(real_repo, target_is_directory=True)
+
+    canonical_git_dir = (real_repo / ".git").resolve(strict=False)
+    metadata = WorkspacesMetadata(
+        version=SCHEMA_VERSION,
+        repos={
+            str(canonical_git_dir): RepoMetadata(
+                git_dir=symlink_repo / ".git",
+                repo_root=real_repo,
+                default_remote=None,
+                tracked_at="2026-03-01T00:00:00+00:00",
+                updated_at="2026-03-01T00:00:00+00:00",
+                workspaces={
+                    "feature/a": _workspace(
+                        branch="feature/a", path="/wt/feature-a", kind="standard"
+                    )
+                },
+            )
+        },
+    )
+
+    with pytest.raises(
+        ValueError, match="repo.git_dir must be stored as canonical realpath"
+    ):
+        manager.write(metadata)
 
 
 def test_write_validates_workspace_key_matches_branch(tmp_path: Path) -> None:

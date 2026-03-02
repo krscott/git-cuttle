@@ -242,10 +242,13 @@ def _validate_workspaces_metadata(metadata: WorkspacesMetadata) -> None:
         )
 
     for repo_key, repo in metadata.repos.items():
-        if repo_key != str(repo.git_dir):
-            raise ValueError("repo key must match repo.git_dir exactly")
         if not repo.git_dir.is_absolute():
             raise ValueError("repo.git_dir must be an absolute path")
+        canonical_git_dir = repo.git_dir.resolve(strict=False)
+        if repo_key != str(canonical_git_dir):
+            raise ValueError("repo key must match canonical repo.git_dir realpath")
+        if repo.git_dir != canonical_git_dir:
+            raise ValueError("repo.git_dir must be stored as canonical realpath")
         if not repo.repo_root.is_absolute():
             raise ValueError("repo.repo_root must be an absolute path")
         _validate_timestamp(repo.tracked_at, field_name="repo.tracked_at")
