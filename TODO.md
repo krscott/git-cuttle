@@ -5,29 +5,26 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [x] [P0] Story: Make `update` octopus flow fully transactional across all touched refs.
-  `DESIGN.md` (Merge strategy) requires multi-branch operations to be atomic,
-  with backup refs under `refs/gitcuttle/txn/<txn-id>/...` and full rollback on
-  failure. `git_cuttle/update.py::update_octopus_workspace` currently rebases
-  parent branches before rebuilding the octopus branch, but only restores the
-  octopus branch on failure. Add backup refs and rollback for every touched
-  parent branch, and add CLI-level integration coverage for parent-ref rollback
-  and backup-ref cleanup.
+- [ ] [P1] Story: Enforce `DESIGN.md` metadata-last ordering in transactional delete/prune flows.
+  `DESIGN.md` minimum rollback contract states metadata writes MUST be last after
+  git ref/worktree mutations. `git_cuttle/delete.py` and `git_cuttle/prune.py`
+  currently run backup-ref cleanup after `write-metadata`, which is another ref
+  mutation after metadata. Reorder transaction sequencing (or split post-commit
+  cleanup semantics) so metadata is truly the final state mutation while still
+  preserving deterministic rollback and recovery behavior.
 
-- [x] [P0] Story: Make `absorb` transactional with deterministic rollback and recovery output.
-  `DESIGN.md` requires atomic multi-branch operations and explicit partial-state
-  recovery guidance when rollback fails. `git_cuttle/absorb.py::absorb_octopus_workspace`
-  mutates parent branches and rebuilds the octopus branch without transaction
-  backup refs or coordinated rollback. Wrap absorb in transaction steps that
-  snapshot touched refs, restore all refs on failure, and emit deterministic
-  recovery commands when rollback is partial; add integration tests for both
-  rollback success and rollback-failure reporting.
+- [ ] [P1] Story: Guarantee deterministic manual recovery commands for worktree-rollback failures.
+  `DESIGN.md` requires deterministic recovery commands whenever rollback is
+  partial. In `new`/`delete`/`prune`, rollback failures in worktree restoration
+  steps can currently surface without step-specific recovery commands. Add
+  explicit `TransactionStep.recovery_commands` for worktree rollback paths and
+  cover these failure modes with CLI integration tests that assert actionable
+  recovery output.
 
-- [x] [P1] Story: Transactionalize `new`, `delete`, and `prune` to prevent git/metadata drift.
-  `DESIGN.md` requires git ref/worktree changes and metadata writes to be
-  rollback-safe as one operation. `git_cuttle/new.py`, `git_cuttle/delete.py`,
-  and `git_cuttle/prune.py` currently perform sequential mutations and can leave
-  partial state (for example, branch/worktree changed but metadata stale) when
-  a later step fails. Introduce shared transaction wiring for these commands and
-  add integration tests that inject failures after git mutations and assert full
-  recovery of refs, worktrees, metadata, and temporary backup refs.
+- [ ] [P2] Story: Add CLI integration coverage for octopus `update` partial-rollback reporting.
+  `DESIGN.md` user-visible failure contracts require exact partial-state output
+  and deterministic recovery commands when rollback fails. `absorb` has CLI
+  coverage for this path, but `update` currently only covers rollback-success
+  scenarios. Add a rollback-failure integration test (for example via hooks that
+  invalidate backup refs mid-transaction) and assert `transaction-rollback-failed`
+  output includes partial state plus recovery commands.
