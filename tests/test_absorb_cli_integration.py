@@ -259,3 +259,130 @@ def test_cli_absorb_fails_when_current_workspace_is_non_octopus(tmp_path: Path) 
     assert result.returncode == 2
     assert "error[invalid-workspace-kind]: absorb requires octopus workspace metadata" in result.stderr
     assert "details: feature/standard" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_absorb_rolls_back_touched_refs_and_cleans_backup_refs(tmp_path: Path) -> None:
+    repo, workspace = _setup_octopus_repo(tmp_path)
+
+    (repo / "shared.txt").write_text("from octopus\n")
+    _git(cwd=repo, args=["add", "shared.txt"])
+    _git(cwd=repo, args=["commit", "-m", "octopus change"])
+
+    _git(cwd=repo, args=["checkout", "main"])
+    (repo / "shared.txt").write_text("from main\n")
+    _git(cwd=repo, args=["add", "shared.txt"])
+    _git(cwd=repo, args=["commit", "-m", "main conflicting change"])
+
+    _git(cwd=repo, args=["checkout", workspace.branch])
+
+    before_main_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", "refs/heads/main"],
+    ).stdout.strip()
+    before_release_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", "refs/heads/release"],
+    ).stdout.strip()
+    before_octopus_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", f"refs/heads/{workspace.branch}"],
+    ).stdout.strip()
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=repo,
+        default_remote=None,
+        workspace=workspace,
+    )
+
+    result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=[])
+
+    assert result.returncode == 2
+    assert (
+        "error[absorb-cherry-pick-failed]: failed to cherry-pick commit onto target parent"
+        in result.stderr
+    )
+
+    after_main_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", "refs/heads/main"],
+    ).stdout.strip()
+    after_release_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", "refs/heads/release"],
+    ).stdout.strip()
+    after_octopus_oid = _git(
+        cwd=repo,
+        args=["rev-parse", "--verify", f"refs/heads/{workspace.branch}"],
+    ).stdout.strip()
+
+    assert after_main_oid == before_main_oid
+    assert after_release_oid == before_release_oid
+    assert after_octopus_oid == before_octopus_oid
+
+    backup_refs = _git(
+        cwd=repo,
+        args=["for-each-ref", "--format=%(refname)", "refs/gitcuttle/txn"],
+    ).stdout.strip()
+    assert backup_refs == ""
+
+
+@pytest.mark.integration
+def test_cli_absorb_reports_deterministic_recovery_when_rollback_is_partial(
+    tmp_path: Path,
+) -> None:
+    repo, workspace = _setup_octopus_repo(tmp_path)
+
+    (repo / "release-only.txt").write_text("r1\n")
+    _git(cwd=repo, args=["add", "release-only.txt"])
+    _git(cwd=repo, args=["commit", "-m", "release-only"])
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    post_checkout = hooks_dir / "post-checkout"
+    post_checkout.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "if [ -f .git/gitcuttle_absorb_hook_done ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "branch=$(git rev-parse --abbrev-ref HEAD)\n"
+        "if [ \"$branch\" != \"release\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "touch .git/gitcuttle_absorb_hook_done\n"
+        "for ref in $(git for-each-ref --format='%(refname)' refs/gitcuttle/txn); do\n"
+        "  git update-ref -d \"$ref\"\n"
+        "done\n"
+        "printf 'hook divergence\\n' >> release.txt\n"
+        "git add release.txt\n"
+        "git commit -m 'hook diverge' >/dev/null 2>&1 || true\n"
+    )
+    post_checkout.chmod(0o755)
+    _git(cwd=repo, args=["config", "core.hooksPath", str(hooks_dir)])
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=repo,
+        default_remote=None,
+        workspace=workspace,
+    )
+
+    result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=["release"])
+
+    assert result.returncode == 2
+    assert (
+        "error[transaction-rollback-failed]: operation failed and automatic rollback was partial"
+        in result.stderr
+    )
+    assert "rollback failures:" in result.stderr
+    assert "deterministic recovery commands:" in result.stderr
+    assert (
+        f"git checkout {workspace.branch} && git reset --hard refs/gitcuttle/txn/"
+        in result.stderr
+    )

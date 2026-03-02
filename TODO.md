@@ -14,7 +14,7 @@ implementation work and user-visible automated test coverage.
   parent branch, and add CLI-level integration coverage for parent-ref rollback
   and backup-ref cleanup.
 
-- [ ] [P0] Story: Make `absorb` transactional with deterministic rollback and recovery output.
+- [x] [P0] Story: Make `absorb` transactional with deterministic rollback and recovery output.
   `DESIGN.md` requires atomic multi-branch operations and explicit partial-state
   recovery guidance when rollback fails. `git_cuttle/absorb.py::absorb_octopus_workspace`
   mutates parent branches and rebuilds the octopus branch without transaction
