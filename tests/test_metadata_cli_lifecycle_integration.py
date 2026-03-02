@@ -49,6 +49,24 @@ def test_cli_list_does_not_create_tracking_metadata(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_cli_list_cache_refresh_never_creates_tracking_metadata(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    xdg_data_home = tmp_path / "xdg"
+    env = dict(os.environ)
+    env["XDG_DATA_HOME"] = str(xdg_data_home)
+
+    first = _run_cli(cwd=repo, args=["list"], env=env)
+    second = _run_cli(cwd=repo, args=["list"], env=env)
+
+    assert first.returncode == 0
+    assert second.returncode == 0
+    assert not (xdg_data_home / "gitcuttle" / "workspaces.json").exists()
+
+
+@pytest.mark.integration
 def test_cli_mutating_command_migrates_existing_metadata(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

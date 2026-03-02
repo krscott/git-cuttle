@@ -99,7 +99,7 @@ implementation work and user-visible automated test coverage.
   matching DESIGN requirements (how to restore git to an operable state), and
   add integration assertions for guidance text on blocked/conflict flows.
 
-- [ ] [P1] Story: Fix delete guidance and close MUST-level integration gaps.
+- [x] [P1] Story: Fix delete guidance and close MUST-level integration gaps.
   For untracked workspace deletion, include guidance to delete via git CLI as
   required by DESIGN. Add integration tests for: invalid base-ref hinting,
   absorb failure when current workspace is non-octopus, prune missing-local-

@@ -182,3 +182,26 @@ def test_cli_new_without_branch_generates_unique_names_across_runs(
         re.fullmatch(r"workspace-[k-z]{8}", branch) is not None
         for branch in generated_branches
     )
+
+
+@pytest.mark.integration
+def test_cli_new_invalid_base_ref_shows_actionable_hint(tmp_path: pathlib.Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    result = subprocess.run(
+        ["gitcuttle", "new", "missing/base", "-b", "feature/invalid-base"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert "error[invalid-base-ref]: base ref does not exist" in result.stderr
+    assert "details: missing/base" in result.stderr
+    assert "hint: pass a valid local branch, tag, or commit" in result.stderr

@@ -206,3 +206,35 @@ def test_cli_absorb_heuristic_mode_reports_ambiguity(tmp_path: Path) -> None:
         "hint: rerun with an explicit parent branch or interactive mode (-i)"
         in result.stderr
     )
+
+
+@pytest.mark.integration
+def test_cli_absorb_fails_when_current_workspace_is_non_octopus(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _git(cwd=repo, args=["checkout", "-b", "feature/standard"])
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=repo,
+        default_remote=None,
+        workspace=WorkspaceMetadata(
+            branch="feature/standard",
+            worktree_path=repo,
+            tracked_remote=None,
+            kind="standard",
+            base_ref="main",
+            octopus_parents=(),
+            created_at="2026-03-02T00:00:00Z",
+            updated_at="2026-03-02T00:00:00Z",
+        ),
+    )
+
+    result = _run_absorb(cwd=repo, xdg_data_home=xdg_data_home, args=[])
+
+    assert result.returncode == 2
+    assert "error[invalid-workspace-kind]: absorb requires octopus workspace metadata" in result.stderr
+    assert "details: feature/standard" in result.stderr

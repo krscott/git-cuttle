@@ -73,6 +73,39 @@ def test_prune_marks_missing_local_branch_as_candidate(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_prune_missing_local_branch_removes_worktree_directory_and_metadata(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-missing-local",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    _git(cwd=destination, args=["checkout", "--detach"])
+    _git(cwd=repo, args=["branch", "-D", "feature/prune-missing-local"])
+
+    prune_workspaces(
+        cwd=repo,
+        metadata_manager=manager,
+        pr_status_by_branch={"feature/prune-missing-local": "unknown"},
+    )
+
+    assert not destination.exists()
+    assert (
+        "feature/prune-missing-local"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+
+
+@pytest.mark.integration
 def test_prune_does_not_remove_branch_for_unknown_pr_state(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -107,6 +140,7 @@ def test_delete_requires_tracked_workspace(tmp_path: Path) -> None:
         )
 
     assert exc_info.value.code == "workspace-not-tracked"
+    assert any("git branch -D <branch>" in hint for hint in exc_info.value.guidance)
 
 
 @pytest.mark.integration

@@ -81,7 +81,10 @@ def delete_workspace(
             code="workspace-not-tracked",
             message="workspace is not tracked",
             details=branch,
-            guidance=("run `gitcuttle list` to inspect tracked workspaces",),
+            guidance=(
+                "run `git branch --list` to inspect local branches",
+                "if needed, delete manually with `git branch -D <branch>` and `git worktree remove <path>`",
+            ),
         )
 
     current = current_branch(cwd=cwd)
