@@ -144,23 +144,11 @@ def _show_list() -> int:
         print("no tracked workspaces or worktrees")
         return 0
 
-    tracked_by_branch = {tracked.branch: tracked for tracked in tracked_worktrees}
     workspace_by_merge_branch = {
         workspace.merge_branch: workspace for workspace in workspaces
     }
-
-    for workspace in workspaces:
-        branches = ", ".join(workspace.branches)
-        tracked = tracked_by_branch.get(workspace.merge_branch)
-        if tracked is None or not _is_workspace_tracked_worktree_pair(
-            workspace=workspace,
-            tracked_worktree=tracked,
-        ):
-            print(f"{workspace.name} [workspace]: parents={branches}")
-        else:
-            print(
-                f"{workspace.name} [workspace]: parents={branches} path={tracked.path}"
-            )
+    linked_workspace_path_by_name: dict[str, str] = {}
+    unlinked_tracked_lines: list[str] = []
 
     for tracked in tracked_worktrees:
         if tracked.kind == "workspace":
@@ -169,14 +157,30 @@ def _show_list() -> int:
                 workspace=matching_workspace,
                 tracked_worktree=tracked,
             ):
+                linked_workspace_path_by_name[matching_workspace.name] = tracked.path
                 continue
+
             workspace_name = tracked.workspace_name or tracked.branch
-            print(
+            unlinked_tracked_lines.append(
                 f"{tracked.branch} [orphan-workspace-worktree]: "
                 f"workspace={workspace_name} path={tracked.path}"
             )
             continue
-        print(f"{tracked.branch} [branch]: path={tracked.path}")
+
+        unlinked_tracked_lines.append(f"{tracked.branch} [branch]: path={tracked.path}")
+
+    for workspace in workspaces:
+        branches = ", ".join(workspace.branches)
+        linked_path = linked_workspace_path_by_name.get(workspace.name)
+        if linked_path is None:
+            print(f"{workspace.name} [workspace]: parents={branches}")
+        else:
+            print(
+                f"{workspace.name} [workspace]: parents={branches} path={linked_path}"
+            )
+
+    for line in unlinked_tracked_lines:
+        print(line)
 
     return 0
 
@@ -226,6 +230,77 @@ def _delete_tracked_worktree_entry(tracked_worktree: TrackedWorktree) -> None:
         tracked_worktree.branch,
         metadata_path=metadata_path,
     )
+
+
+def _convert_to_branch_worktree(tracked_worktree: TrackedWorktree) -> TrackedWorktree:
+    return TrackedWorktree(
+        branch=tracked_worktree.branch,
+        path=tracked_worktree.path,
+        kind="branch",
+        workspace_name=None,
+    )
+
+
+def _delete_workspace_only(
+    target_workspace: WorkspaceConfig | None,
+    tracked_worktree: TrackedWorktree | None,
+) -> str:
+    if target_workspace is None:
+        raise GitCuttleError("workspace not found")
+
+    delete_workspace(target_workspace.name)
+    if tracked_worktree is not None and _is_workspace_tracked_worktree_pair(
+        workspace=target_workspace,
+        tracked_worktree=tracked_worktree,
+    ):
+        save_tracked_worktree(_convert_to_branch_worktree(tracked_worktree))
+
+    return f"deleted workspace metadata: {target_workspace.name}"
+
+
+def _delete_worktree_only(tracked_worktree: TrackedWorktree | None) -> str:
+    if tracked_worktree is None:
+        raise GitCuttleError("tracked worktree not found")
+
+    _delete_tracked_worktree_entry(tracked_worktree)
+    return f"deleted tracked worktree: {tracked_worktree.branch}"
+
+
+def _delete_workspace_or_worktree(
+    target_name: str,
+    target_workspace: WorkspaceConfig | None,
+    tracked_worktree: TrackedWorktree | None,
+) -> str:
+    if target_workspace is None and tracked_worktree is None:
+        raise GitCuttleError("workspace or tracked worktree not found")
+
+    if (
+        target_workspace is not None
+        and tracked_worktree is not None
+        and not _is_workspace_tracked_worktree_pair(
+            workspace=target_workspace,
+            tracked_worktree=tracked_worktree,
+        )
+    ):
+        raise GitCuttleError(
+            f"ambiguous delete target: {target_name}. "
+            "use --workspace-only or --worktree-only"
+        )
+
+    if tracked_worktree is not None:
+        _delete_tracked_worktree_entry(tracked_worktree)
+
+    if target_workspace is not None:
+        delete_workspace(target_workspace.name)
+
+    if target_workspace is not None and tracked_worktree is not None:
+        return f"deleted workspace and worktree: {target_workspace.name}"
+    if target_workspace is not None:
+        return f"deleted workspace metadata: {target_workspace.name}"
+    if tracked_worktree is not None:
+        return f"deleted tracked worktree: {tracked_worktree.branch}"
+
+    raise GitCuttleError("workspace or tracked worktree not found")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -311,69 +386,23 @@ def main(argv: list[str] | None = None) -> int:
             target_name = args.workspace or get_current_branch()
             target_workspace = get_workspace(target_name)
             tracked_worktree = get_tracked_worktree(target_name)
-
-            has_workspace = target_workspace is not None
-            has_worktree = tracked_worktree is not None
-
-            if not has_workspace and not has_worktree:
-                raise GitCuttleError("workspace or tracked worktree not found")
-
             if args.workspace_only:
-                if not has_workspace:
-                    raise GitCuttleError("workspace not found")
-                assert target_workspace is not None
-                delete_workspace(target_workspace.name)
-                if (
-                    tracked_worktree is not None
-                    and _is_workspace_tracked_worktree_pair(
-                        workspace=target_workspace,
-                        tracked_worktree=tracked_worktree,
-                    )
-                ):
-                    save_tracked_worktree(
-                        TrackedWorktree(
-                            branch=tracked_worktree.branch,
-                            path=tracked_worktree.path,
-                            kind="branch",
-                            workspace_name=None,
-                        )
-                    )
-                print(f"deleted workspace metadata: {target_workspace.name}")
-                return 0
-
-            if args.worktree_only:
-                if not has_worktree:
-                    raise GitCuttleError("tracked worktree not found")
-                assert tracked_worktree is not None
-                _delete_tracked_worktree_entry(tracked_worktree)
-                print(f"deleted tracked worktree: {tracked_worktree.branch}")
-                return 0
-
-            if has_workspace and has_worktree:
-                assert target_workspace is not None
-                assert tracked_worktree is not None
-                if not _is_workspace_tracked_worktree_pair(
-                    workspace=target_workspace,
+                result_message = _delete_workspace_only(
+                    target_workspace=target_workspace,
                     tracked_worktree=tracked_worktree,
-                ):
-                    raise GitCuttleError(
-                        f"ambiguous delete target: {target_name}. "
-                        "use --workspace-only or --worktree-only"
-                    )
-
-            if tracked_worktree is not None:
-                _delete_tracked_worktree_entry(tracked_worktree)
-
-            if target_workspace is not None:
-                delete_workspace(target_workspace.name)
-
-            if target_workspace is not None and tracked_worktree is not None:
-                print(f"deleted workspace and worktree: {target_workspace.name}")
-            elif target_workspace is not None:
-                print(f"deleted workspace metadata: {target_workspace.name}")
+                )
+            elif args.worktree_only:
+                result_message = _delete_worktree_only(
+                    tracked_worktree=tracked_worktree,
+                )
             else:
-                assert tracked_worktree is not None
-                print(f"deleted tracked worktree: {tracked_worktree.branch}")
+                result_message = _delete_workspace_or_worktree(
+                    target_name=target_name,
+                    target_workspace=target_workspace,
+                    tracked_worktree=tracked_worktree,
+                )
+
+            print(result_message)
             return 0
 
         elif args.command == "list":
