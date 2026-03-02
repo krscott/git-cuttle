@@ -1,3 +1,4 @@
+import hashlib
 import os
 import pathlib
 import re
@@ -182,6 +183,60 @@ def test_cli_new_without_branch_generates_unique_names_across_runs(
         re.fullmatch(r"workspace-[k-z]{8}", branch) is not None
         for branch in generated_branches
     )
+
+
+@pytest.mark.integration
+def test_cli_new_collision_uses_deterministic_paths_and_unsanitized_metadata_keys(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(tmp_path / "xdg")
+
+    first_branch = "feature/a"
+    second_branch = "feature-a"
+
+    first = subprocess.run(
+        ["gitcuttle", "new", "-b", first_branch, "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+    second = subprocess.run(
+        ["gitcuttle", "new", "-b", second_branch, "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert first.returncode == 0
+    assert second.returncode == 0
+
+    first_destination = pathlib.Path(first.stdout.strip())
+    second_destination = pathlib.Path(second.stdout.strip())
+    expected_suffix = hashlib.sha256(second_branch.encode("utf-8")).hexdigest()[:6]
+
+    assert first_destination.is_dir()
+    assert second_destination.is_dir()
+    assert first_destination.parent == second_destination.parent
+    assert first_destination.name == "feature-a"
+    assert second_destination.name == f"feature-a-{expected_suffix}"
+
+    metadata = MetadataManager(
+        path=tmp_path / "xdg" / "gitcuttle" / "workspaces.json"
+    ).read()
+    tracked_repo = next(iter(metadata.repos.values()))
+
+    assert set(tracked_repo.workspaces.keys()) == {first_branch, second_branch}
+    assert tracked_repo.workspaces[first_branch].branch == first_branch
+    assert tracked_repo.workspaces[second_branch].branch == second_branch
+    assert tracked_repo.workspaces[first_branch].worktree_path == first_destination
+    assert tracked_repo.workspaces[second_branch].worktree_path == second_destination
 
 
 @pytest.mark.integration

@@ -5,7 +5,7 @@ Each story includes implementation work and user-visible automated coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Add CLI integration coverage for workspace path collision handling.
+- [x] [P1] Story: Add CLI integration coverage for workspace path collision handling.
   `DESIGN.md` requires deterministic suffixes when two branch names sanitize to
   the same workspace directory. Add an end-to-end `gitcuttle new` integration
   test that creates colliding branch names, asserts unique deterministic
