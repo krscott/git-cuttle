@@ -9,6 +9,7 @@ from typing import Any
 from dotenv import find_dotenv, load_dotenv
 from setproctitle import setproctitle
 
+from git_cuttle.errors import AppError, format_user_error
 from git_cuttle.lib import Options, greet, in_git_repo
 
 
@@ -25,8 +26,15 @@ def main() -> None:
 
     if not in_git_repo(Path.cwd()):
         print(
-            "error: gitcuttle must be run from within a git repository. "
-            "Change to a repository directory and retry.",
+            format_user_error(
+                AppError(
+                    code="not-in-git-repo",
+                    message="gitcuttle must be run from within a git repository",
+                    guidance=(
+                        "change to your repository root or one of its worktrees and retry",
+                    ),
+                )
+            ),
             file=sys.stderr,
         )
         raise SystemExit(2)

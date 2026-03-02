@@ -103,4 +103,5 @@ def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
         cwd=tmp_path,
     )
     assert result.returncode != 0
-    assert "must be run from within a git repository" in result.stderr
+    assert "error[not-in-git-repo]: gitcuttle must be run from within a git repository" in result.stderr
+    assert "hint: change to your repository root or one of its worktrees and retry" in result.stderr
