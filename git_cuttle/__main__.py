@@ -1,13 +1,15 @@
 import argparse
 import logging
 import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
 from setproctitle import setproctitle
 
-from git_cuttle.lib import Options, greet
+from git_cuttle.lib import Options, greet, in_git_repo
 
 
 def main() -> None:
@@ -20,6 +22,14 @@ def main() -> None:
         level=logging.DEBUG if cli_opts.verbose else logging.INFO,
         format="%(message)s",
     )
+
+    if not in_git_repo(Path.cwd()):
+        print(
+            "error: gitcuttle must be run from within a git repository. "
+            "Change to a repository directory and retry.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
     greet(cli_opts.app_opts)
 

@@ -4,6 +4,7 @@ These tests invoke the CLI as a real process to verify the end-to-end user exper
 """
 
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -90,3 +91,16 @@ def test_cli_flag_overrides_env_var() -> None:
     assert result.returncode == 0
     assert "Hello, Eve!" in result.stdout
     assert "Greeting user..." in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_errors_outside_git_repo(tmp_path: pathlib.Path) -> None:
+    """Test CLI fails with guidance when run outside a git repository."""
+    result = subprocess.run(
+        ["gitcuttle", "Frank"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode != 0
+    assert "must be run from within a git repository" in result.stderr
