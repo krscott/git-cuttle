@@ -57,7 +57,7 @@ implementation work and user-visible automated test coverage.
   semantics against `DESIGN.md` absorb wording and update behavior/tests if
   needed for strict contract alignment.
 
-- [ ] [P0] Story: Enforce transactional safety guarantees for all mutating commands.
+- [x] [P0] Story: Enforce transactional safety guarantees for all mutating commands.
   Include backup ref lifecycle, rollback of refs/worktrees/metadata, and
   deterministic partial-state recovery output, with integration tests that
   inject failures mid-transaction and during rollback.
