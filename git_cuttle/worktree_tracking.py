@@ -287,14 +287,19 @@ def ensure_workspace_worktree(workspace: WorkspaceConfig) -> EnsureWorktreeResul
 
 def remove_tracked_worktree_path(entry: TrackedWorktree) -> None:
     path = Path(entry.path)
-    if not path.exists():
-        return
-
     registered_branch: str | None = None
     for worktree in list_git_worktrees():
         if _paths_equal(worktree.path, path):
             registered_branch = worktree.branch
             break
+
+    if not path.exists():
+        if registered_branch is not None:
+            raise GitCuttleError(
+                "tracked worktree path is missing but still registered with git: "
+                f"{path}. run 'git worktree prune' and retry"
+            )
+        return
 
     if registered_branch is None:
         raise GitCuttleError(f"managed path exists but is not a git worktree: {path}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -344,6 +345,47 @@ def test_cli_delete_worktree_only_succeeds_from_deleted_worktree_cwd() -> None:
         assert list_result.returncode == 0
         assert "no tracked workspaces or worktrees" in list_result.stdout
         assert not worktree_path.exists()
+
+
+@pytest.mark.integration
+def test_cli_delete_worktree_only_rejects_missing_but_registered_path() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        repo = root / "repo"
+        xdg_data_home = root / "xdg-data"
+        repo.mkdir()
+        _init_repo_with_feature_a_and_b(repo)
+
+        run_env = {**env, "XDG_DATA_HOME": str(xdg_data_home)}
+        worktree_path = _create_tracked_worktree(repo, run_env, "feature-a")
+        metadata_path = _tracked_worktree_metadata_file(repo, "feature-a")
+
+        shutil.rmtree(worktree_path)
+        assert not worktree_path.exists()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "git_cuttle",
+                "delete",
+                "feature-a",
+                "--worktree-only",
+            ],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=run_env,
+        )
+
+        assert result.returncode == 1
+        assert "path is missing but still registered with git" in result.stderr
+        assert metadata_path.exists()
 
 
 @pytest.mark.integration
