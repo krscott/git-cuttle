@@ -14,14 +14,14 @@ It is intentionally scoped to what exists in code today.
 - workspace path derivation helpers
 - transactional operation primitive for multi-step branch/worktree mutations
 - workspace creation helpers for standard and octopus branches
-- non-octopus workspace update helper with upstream rebase behavior
+- non-octopus and octopus workspace update helpers
 - remote ahead/behind status resolution helpers for tracked workspaces
 - list table rendering helpers with unknown-status markers
 
 Higher-level workflow commands (`new`, `list`, `delete`, `prune`, `update`,
 `absorb`) are planned but not yet implemented end-to-end in the CLI.
 
-The `new` and non-octopus portions of `update` are partially implemented as
+The `new` and `update` portions are partially implemented as
 library helpers in `git_cuttle/new.py` and `git_cuttle/update.py`, but are not
 yet wired to CLI subcommands.
 
@@ -148,14 +148,23 @@ derived workspace path rules.
 
 ## Workspace Update Helper
 
-`git_cuttle/update.py` provides library-level non-octopus update behavior:
+`git_cuttle/update.py` provides library-level update behavior:
 
-- requires `kind="standard"` workspace metadata
-- resolves upstream as `<tracked_remote>/<branch>` or `<default_remote>/<branch>`
-- emits `error[no-upstream]` when no upstream can be resolved
-- fetches upstream remote and verifies the remote-tracking ref exists
-- rebases local workspace branch onto upstream using git rebase semantics
-- returns before/after branch OIDs to support future dry-run/plan wiring
+- `update_non_octopus_workspace(...)`:
+  - requires `kind="standard"` workspace metadata
+  - resolves upstream as `<tracked_remote>/<branch>` or `<default_remote>/<branch>`
+  - emits `error[no-upstream]` when no upstream can be resolved
+  - fetches upstream remote and verifies the remote-tracking ref exists
+  - rebases local workspace branch onto upstream using git rebase semantics
+- `update_octopus_workspace(...)`:
+  - requires `kind="octopus"` and at least two tracked parent refs
+  - fetches tracked remote (when configured) and resolves each parent from
+    remote-tracking refs first, then local refs as fallback
+  - rebuilds the octopus branch by resetting to the first parent and creating a
+    fresh n-way merge commit with remaining parents
+  - replays post-merge commits unique to the octopus branch via cherry-pick
+  - intentionally avoids direct upstream rebasing of the octopus branch itself
+- both update helpers return before/after branch OIDs for future plan wiring
 
 ## Remote Status Helpers
 
