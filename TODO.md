@@ -114,7 +114,7 @@ implementation work and user-visible automated test coverage.
   and restores refs/worktrees/metadata on failure. Add integration coverage for
   mid-flight failures and backup-ref cleanup.
 
-- [ ] [P0] Story: Surface rollback partial-state recovery contract in CLI error
+- [x] [P0] Story: Surface rollback partial-state recovery contract in CLI error
   handling.
   Catch transaction rollback failures at the CLI boundary and print exact
   partial-state details plus deterministic recovery commands per DESIGN. Add

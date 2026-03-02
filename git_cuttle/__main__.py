@@ -7,6 +7,7 @@ from setproctitle import setproctitle
 from git_cuttle.cli import CliOpts, EnvAction
 from git_cuttle.errors import AppError, format_user_error
 from git_cuttle.orchestrator import run
+from git_cuttle.transaction import TransactionRollbackError
 
 __all__ = ["main", "EnvAction"]
 
@@ -27,6 +28,21 @@ def main() -> None:
     except AppError as error:
         print(
             format_user_error(error),
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    except TransactionRollbackError as rollback_error:
+        print(
+            format_user_error(
+                AppError(
+                    code="transaction-rollback-failed",
+                    message="operation failed and automatic rollback was partial",
+                    details=rollback_error.format_partial_state(),
+                    guidance=(
+                        "run the listed recovery commands to restore repository state",
+                    ),
+                )
+            ),
             file=sys.stderr,
         )
         raise SystemExit(2)
