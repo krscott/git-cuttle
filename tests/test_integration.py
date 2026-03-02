@@ -363,6 +363,7 @@ def test_cli_worktree_remote_fallback_ambiguous_without_origin() -> None:
         assert result.returncode == 1
         assert result.stdout == ""
         assert "ambiguous remote branch for remote-feature" in result.stderr
+        assert not (xdg_data_home / "gitcuttle" / "worktrees").exists()
 
 
 @pytest.mark.integration
@@ -406,6 +407,7 @@ def test_cli_worktree_remote_fallback_missing_branch() -> None:
         assert (
             "branch not found locally or on any remote: missing-branch" in result.stderr
         )
+        assert not (xdg_data_home / "gitcuttle" / "worktrees").exists()
 
 
 @pytest.mark.integration

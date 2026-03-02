@@ -86,7 +86,10 @@ def list_tracked_worktrees() -> list[TrackedWorktree]:
     tracked_dir = _tracked_worktree_dir()
     if not tracked_dir.exists():
         return []
-    return [_load_tracked_worktree(path) for path in sorted(tracked_dir.glob("*.json"))]
+    entries = [
+        _load_tracked_worktree(path) for path in sorted(tracked_dir.glob("*.json"))
+    ]
+    return sorted(entries, key=lambda entry: entry.branch)
 
 
 def delete_tracked_worktree(branch: str) -> None:
@@ -189,17 +192,21 @@ def _ensure_worktree(
             f"target path is already registered as a different worktree: {target_path}"
         )
 
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-
+    remote_ref: str | None = None
     if branch_exists_local(branch):
         if get_current_branch() == branch:
             raise GitCuttleError(
                 f"branch is checked out in current worktree: {branch}. "
                 "switch to another branch first"
             )
-        add_git_worktree(target_path, branch)
     else:
         remote_ref = resolve_remote_branch(branch)
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if remote_ref is None:
+        add_git_worktree(target_path, branch)
+    else:
         add_git_worktree_from_remote(target_path, branch, remote_ref)
 
     tracked = _build_tracked_worktree(branch, kind, workspace_name)
