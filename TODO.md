@@ -35,7 +35,7 @@
 - [x] Implement `gitcuttle list` table output with required columns and graceful unknown markers.
 - [ ] Implement `gitcuttle delete` with tracked-workspace checks, safety gates, `--force`, `--dry-run`, and `--json` plan output.
 - [ ] Implement `gitcuttle prune` with merged-PR or missing-local-branch criteria, safety gates, `--force`, `--dry-run`, and `--json` plan output.
-- [ ] Implement `gitcuttle update` for non-octopus branches (upstream rebase rules + no-upstream error path).
+- [x] Implement `gitcuttle update` for non-octopus branches (upstream rebase rules + no-upstream error path).
 - [ ] Implement octopus `gitcuttle update` rebuild flow (parent updates, new n-way merge, replay post-merge commits, no direct octopus upstream rebase).
 - [ ] Implement `gitcuttle absorb` (explicit target branch mode, interactive `-i`, heuristic mode with confidence failure behavior).
 
