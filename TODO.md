@@ -21,7 +21,7 @@ implementation work and user-visible automated test coverage.
   cover these failure modes with CLI integration tests that assert actionable
   recovery output.
 
-- [ ] [P2] Story: Add CLI integration coverage for octopus `update` partial-rollback reporting.
+- [x] [P2] Story: Add CLI integration coverage for octopus `update` partial-rollback reporting.
   `DESIGN.md` user-visible failure contracts require exact partial-state output
   and deterministic recovery commands when rollback fails. `absorb` has CLI
   coverage for this path, but `update` currently only covers rollback-success

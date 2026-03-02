@@ -431,3 +431,92 @@ def test_cli_update_octopus_rolls_back_parent_refs_and_cleans_backup_refs(
         args=["for-each-ref", "--format=%(refname)", "refs/gitcuttle/txn"],
     ).stdout.strip()
     assert backup_refs == ""
+
+
+@pytest.mark.integration
+def test_cli_update_octopus_reports_deterministic_recovery_when_rollback_is_partial(
+    tmp_path: Path,
+) -> None:
+    bare_remote, local = _clone_local_remote(tmp_path=tmp_path)
+
+    _git(cwd=local, args=["checkout", "-b", "release"])
+    (local / "release.txt").write_text("release v1\n")
+    _git(cwd=local, args=["add", "release.txt"])
+    _git(cwd=local, args=["commit", "-m", "release v1"])
+    _git(cwd=local, args=["push", "-u", "origin", "release"])
+
+    _git(cwd=local, args=["checkout", "main"])
+    _git(cwd=local, args=["checkout", "-b", "integration/main-release", "main"])
+    _git(
+        cwd=local,
+        args=["merge", "--no-ff", "-m", "Create octopus workspace", "release"],
+    )
+
+    upstream_writer = tmp_path / "upstream-writer"
+    _git(cwd=tmp_path, args=["clone", str(bare_remote), str(upstream_writer)])
+    _git(cwd=upstream_writer, args=["config", "user.name", "Test User"])
+    _git(cwd=upstream_writer, args=["config", "user.email", "test@example.com"])
+
+    _git(cwd=upstream_writer, args=["checkout", "main"])
+    (upstream_writer / "README.md").write_text("hello from main\n")
+    _git(cwd=upstream_writer, args=["add", "README.md"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "main readme change"])
+    _git(cwd=upstream_writer, args=["push", "origin", "main"])
+
+    _git(cwd=upstream_writer, args=["checkout", "release"])
+    (upstream_writer / "README.md").write_text("hello from release\n")
+    _git(cwd=upstream_writer, args=["add", "README.md"])
+    _git(cwd=upstream_writer, args=["commit", "-m", "release readme change"])
+    _git(cwd=upstream_writer, args=["push", "origin", "release"])
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    post_checkout = hooks_dir / "post-checkout"
+    post_checkout.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "if [ -f .git/gitcuttle_update_hook_done ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "branch=$(git rev-parse --abbrev-ref HEAD)\n"
+        "if [ \"$branch\" != \"integration/main-release\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "touch .git/gitcuttle_update_hook_done\n"
+        "for ref in $(git for-each-ref --format='%(refname)' refs/gitcuttle/txn); do\n"
+        "  git update-ref -d \"$ref\"\n"
+        "done\n"
+    )
+    post_checkout.chmod(0o755)
+    _git(cwd=local, args=["config", "core.hooksPath", str(hooks_dir)])
+
+    xdg_data_home = tmp_path / "xdg"
+    metadata_path = xdg_data_home / "gitcuttle" / "workspaces.json"
+    workspace = WorkspaceMetadata(
+        branch="integration/main-release",
+        worktree_path=local,
+        tracked_remote="origin",
+        kind="octopus",
+        base_ref="main",
+        octopus_parents=("main", "release"),
+        created_at="2026-03-02T00:00:00Z",
+        updated_at="2026-03-02T00:00:00Z",
+    )
+    _write_repo_metadata(
+        metadata_path=metadata_path,
+        repo=local,
+        default_remote="origin",
+        workspace=workspace,
+    )
+
+    result = _run_update(cwd=local, xdg_data_home=xdg_data_home)
+
+    assert result.returncode == 2
+    assert (
+        "error[transaction-rollback-failed]: operation failed and automatic rollback was partial"
+        in result.stderr
+    )
+    assert "rollback failures:" in result.stderr
+    assert "deterministic recovery commands:" in result.stderr
+    assert "git checkout release && git reset --hard refs/gitcuttle/txn/" in result.stderr
+    assert "git checkout main && git reset --hard refs/gitcuttle/txn/" in result.stderr
