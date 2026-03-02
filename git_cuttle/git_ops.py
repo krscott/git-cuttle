@@ -121,6 +121,55 @@ def create_backup_refs_for_branches(
     return backup_refs
 
 
+def restore_branch_from_backup_ref(
+    *,
+    txn_id: str,
+    branch: str,
+    cwd: Path | None = None,
+) -> None:
+    backup_ref = backup_ref_for_branch(txn_id=txn_id, branch=branch)
+    backup_oid = _rev_parse_ref(head_ref=backup_ref, cwd=cwd)
+    if backup_oid is None:
+        raise RuntimeError(f"backup ref does not exist: {backup_ref}")
+
+    _update_ref(ref=f"refs/heads/{branch}", oid=backup_oid, cwd=cwd)
+
+
+def set_branch_head(*, branch: str, oid: str, cwd: Path | None = None) -> None:
+    _update_ref(ref=f"refs/heads/{branch}", oid=oid, cwd=cwd)
+
+
+def add_worktree(*, branch: str, path: Path, cwd: Path | None = None) -> None:
+    result = subprocess.run(
+        ["git", "worktree", "add", str(path), branch],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"failed to add worktree {path}")
+
+
+def remove_worktree(*, path: Path, cwd: Path | None = None, force: bool = False) -> None:
+    command = ["git", "worktree", "remove"]
+    if force:
+        command.append("--force")
+    command.append(str(path))
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip() or f"failed to remove worktree {path}"
+        )
+
+
 def remove_backup_refs(*, txn_id: str, cwd: Path | None = None) -> None:
     prefix = f"{BACKUP_REF_PREFIX}/{txn_id}"
     refs_result = subprocess.run(

@@ -138,6 +138,10 @@ Implemented behavior:
   rollback failure details
 - helper `run_transaction(...)` for one-shot execution with explicit or
   generated transaction ids
+- git operation helpers now support transaction rollback primitives for:
+  - restoring branch refs from `refs/gitcuttle/txn/<txn-id>/...` backups
+  - removing created worktrees during rollback
+  - restoring pre-transaction metadata state through step-level rollback
 
 ## Testing Scope
 
