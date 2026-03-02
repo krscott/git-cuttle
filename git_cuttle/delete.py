@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from git_cuttle.errors import AppError
+from git_cuttle.git_ops import add_worktree
 from git_cuttle.git_ops import canonical_git_dir, repo_root
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.plan_output import (
@@ -11,6 +12,13 @@ from git_cuttle.plan_output import (
     PlanAction,
     render_human_plan,
     render_json_plan,
+)
+from git_cuttle.transaction import Transaction, TransactionStep
+from git_cuttle.workspace_transaction import (
+    backup_refs_step,
+    cleanup_backup_refs_step,
+    rollback_restore_branch,
+    run_command_transaction,
 )
 
 DeleteBlockReason = Literal[
@@ -157,21 +165,78 @@ def delete_workspace(
     if dry_run:
         return render_json_plan(plan) if json_output else render_human_plan(plan)
 
-    if workspace.worktree_path.exists():
-        _remove_worktree(
-            repo_root=repo_root_dir,
-            worktree_path=workspace.worktree_path,
-            force=force,
-        )
-    _delete_local_branch(repo_root=repo_root_dir, branch=branch, force=force)
-
     updated_workspaces = dict(repo.workspaces)
     updated_workspaces.pop(branch)
     updated_repo = replace(repo, workspaces=updated_workspaces)
     updated_repos = dict(metadata.repos)
     updated_repos[repo_key] = updated_repo
-    metadata_manager.write(
-        WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+    updated_metadata = WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+
+    transaction = Transaction()
+    transaction.add_step(
+        backup_refs_step(
+            repo_root=repo_root_dir,
+            transaction=transaction,
+            branches=(branch,),
+            backup_error_code="delete-backup-failed",
+            backup_error_message="failed to create transactional backup refs for delete",
+            rollback_error_code="delete-rollback-failed",
+            rollback_error_message="failed to rollback backup refs during delete",
+        )
+    )
+    if workspace.worktree_path.exists():
+        transaction.add_step(
+            TransactionStep(
+                name=f"remove-worktree:{branch}",
+                apply=lambda: _remove_worktree(
+                    repo_root=repo_root_dir,
+                    worktree_path=workspace.worktree_path,
+                    force=force,
+                ),
+                rollback=lambda: _restore_worktree(
+                    repo_root=repo_root_dir,
+                    branch=branch,
+                    worktree_path=workspace.worktree_path,
+                ),
+            )
+        )
+    transaction.add_step(
+        TransactionStep(
+            name=f"delete-branch:{branch}",
+            apply=lambda: _delete_local_branch(
+                repo_root=repo_root_dir,
+                branch=branch,
+                force=force,
+            ),
+            rollback=lambda: rollback_restore_branch(
+                repo_root=repo_root_dir,
+                transaction=transaction,
+                branch=branch,
+                error_code="delete-rollback-failed",
+                message="failed to restore deleted branch from backup ref",
+            ),
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name="write-metadata",
+            apply=lambda: metadata_manager.write(updated_metadata),
+            rollback=lambda: metadata_manager.write(metadata),
+        )
+    )
+    transaction.add_step(
+        cleanup_backup_refs_step(
+            repo_root=repo_root_dir,
+            transaction=transaction,
+            branches=(branch,),
+            cleanup_error_code="delete-cleanup-failed",
+            cleanup_error_message="failed to cleanup transactional backup refs for delete",
+        )
+    )
+    run_command_transaction(
+        transaction=transaction,
+        code="delete-workspace-failed",
+        message="failed to delete workspace",
     )
     return None
 
@@ -285,3 +350,16 @@ def _delete_local_branch(*, repo_root: Path, branch: str, force: bool) -> None:
             message="failed to delete workspace branch",
             details=result.stderr.strip() or branch,
         )
+
+
+def _restore_worktree(*, repo_root: Path, branch: str, worktree_path: Path) -> None:
+    if worktree_path.exists():
+        return
+    try:
+        add_worktree(branch=branch, path=worktree_path, cwd=repo_root)
+    except RuntimeError as error:
+        raise AppError(
+            code="delete-rollback-failed",
+            message="failed to restore workspace worktree during rollback",
+            details=str(error),
+        ) from error

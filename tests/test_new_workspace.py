@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from git_cuttle.errors import AppError
-from git_cuttle.metadata_manager import MetadataManager
+from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.new import (
     create_octopus_workspace,
     create_standard_workspace,
@@ -243,3 +243,54 @@ def test_create_octopus_workspace_rejects_duplicate_parent_refs(tmp_path: Path) 
 
     assert exc_info.value.code == "invalid-octopus-parents"
     assert exc_info.value.message == "octopus parent refs must be unique"
+
+
+@pytest.mark.integration
+def test_create_standard_workspace_rolls_back_git_state_when_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    metadata_manager = MetadataManager(path=metadata_path)
+    original_write = metadata_manager.write
+    did_fail = False
+
+    def fail_once_for_new_workspace(metadata: WorkspacesMetadata) -> None:
+        nonlocal did_fail
+        if (
+            not did_fail
+            and any(
+                "feature/new-rollback" in repo_meta.workspaces
+                for repo_meta in metadata.repos.values()
+            )
+        ):
+            did_fail = True
+            raise RuntimeError("simulated metadata write failure")
+        original_write(metadata)
+
+    monkeypatch.setattr(metadata_manager, "write", fail_once_for_new_workspace)
+
+    with pytest.raises(AppError) as exc_info:
+        create_standard_workspace(
+            cwd=repo,
+            branch="feature/new-rollback",
+            base_ref="main",
+            metadata_manager=metadata_manager,
+        )
+
+    assert exc_info.value.code == "new-workspace-failed"
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/new-rollback"],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+
+    metadata_after = metadata_manager.read()
+    assert all(
+        "feature/new-rollback" not in repo_meta.workspaces
+        for repo_meta in metadata_after.repos.values()
+    )

@@ -23,7 +23,7 @@ implementation work and user-visible automated test coverage.
   recovery commands when rollback is partial; add integration tests for both
   rollback success and rollback-failure reporting.
 
-- [ ] [P1] Story: Transactionalize `new`, `delete`, and `prune` to prevent git/metadata drift.
+- [x] [P1] Story: Transactionalize `new`, `delete`, and `prune` to prevent git/metadata drift.
   `DESIGN.md` requires git ref/worktree changes and metadata writes to be
   rollback-safe as one operation. `git_cuttle/new.py`, `git_cuttle/delete.py`,
   and `git_cuttle/prune.py` currently perform sequential mutations and can leave

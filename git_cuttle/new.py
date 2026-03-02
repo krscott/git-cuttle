@@ -11,7 +11,9 @@ from git_cuttle.metadata_manager import (
     WorkspaceMetadata,
     WorkspacesMetadata,
 )
+from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_paths import derive_workspace_path
+from git_cuttle.workspace_transaction import run_command_transaction
 
 _HEX_TO_INVERSE_ALPHA = str.maketrans("0123456789abcdef", "zyxwvutsrqponmlk")
 
@@ -107,16 +109,11 @@ def create_standard_workspace(
         )
 
     resolved_base_ref = resolve_base_ref(cwd=repo_root_dir, base_ref=base_ref)
-    _create_branch(cwd=repo_root_dir, branch=branch, base_ref=resolved_base_ref)
-
     destination = derive_workspace_path(
         git_dir=repo_git_dir,
         branch=branch,
         sibling_branches=repo.workspaces.keys(),
     )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _add_worktree(cwd=repo_root_dir, branch=branch, destination=destination)
-
     timestamp = _utc_now_iso()
     updated_workspaces = dict(repo.workspaces)
     updated_workspaces[branch] = WorkspaceMetadata(
@@ -132,7 +129,46 @@ def create_standard_workspace(
 
     repos = dict(metadata.repos)
     repos[repo_key] = replace(repo, updated_at=timestamp, workspaces=updated_workspaces)
-    metadata_manager.write(WorkspacesMetadata(version=metadata.version, repos=repos))
+    updated_metadata = WorkspacesMetadata(version=metadata.version, repos=repos)
+
+    transaction = Transaction()
+    transaction.add_step(
+        TransactionStep(
+            name=f"create-branch:{branch}",
+            apply=lambda: _create_branch(
+                cwd=repo_root_dir,
+                branch=branch,
+                base_ref=resolved_base_ref,
+            ),
+            rollback=lambda: _delete_branch_if_exists(cwd=repo_root_dir, branch=branch),
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name=f"add-worktree:{branch}",
+            apply=lambda: _prepare_and_add_worktree(
+                cwd=repo_root_dir,
+                branch=branch,
+                destination=destination,
+            ),
+            rollback=lambda: _remove_worktree_if_exists(
+                cwd=repo_root_dir,
+                destination=destination,
+            ),
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name="write-metadata",
+            apply=lambda: metadata_manager.write(updated_metadata),
+            rollback=lambda: metadata_manager.write(metadata),
+        )
+    )
+    run_command_transaction(
+        transaction=transaction,
+        code="new-workspace-failed",
+        message="failed to create workspace",
+    )
     return destination
 
 
@@ -180,21 +216,11 @@ def create_octopus_workspace(
             guidance=("choose a new branch name",),
         )
 
-    _create_branch(cwd=repo_root_dir, branch=branch, base_ref=normalized_parent_refs[0])
-
     destination = derive_workspace_path(
         git_dir=repo_git_dir,
         branch=branch,
         sibling_branches=repo.workspaces.keys(),
     )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _add_worktree(cwd=repo_root_dir, branch=branch, destination=destination)
-    _create_octopus_merge_commit(
-        cwd=destination,
-        branch=branch,
-        merge_parents=normalized_parent_refs[1:],
-    )
-
     timestamp = _utc_now_iso()
     updated_workspaces = dict(repo.workspaces)
     updated_workspaces[branch] = WorkspaceMetadata(
@@ -210,8 +236,99 @@ def create_octopus_workspace(
 
     repos = dict(metadata.repos)
     repos[repo_key] = replace(repo, updated_at=timestamp, workspaces=updated_workspaces)
-    metadata_manager.write(WorkspacesMetadata(version=metadata.version, repos=repos))
+    updated_metadata = WorkspacesMetadata(version=metadata.version, repos=repos)
+
+    transaction = Transaction()
+    transaction.add_step(
+        TransactionStep(
+            name=f"create-branch:{branch}",
+            apply=lambda: _create_branch(
+                cwd=repo_root_dir,
+                branch=branch,
+                base_ref=normalized_parent_refs[0],
+            ),
+            rollback=lambda: _delete_branch_if_exists(cwd=repo_root_dir, branch=branch),
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name=f"add-worktree:{branch}",
+            apply=lambda: _prepare_and_add_worktree(
+                cwd=repo_root_dir,
+                branch=branch,
+                destination=destination,
+            ),
+            rollback=lambda: _remove_worktree_if_exists(
+                cwd=repo_root_dir,
+                destination=destination,
+            ),
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name=f"merge-octopus:{branch}",
+            apply=lambda: _create_octopus_merge_commit(
+                cwd=destination,
+                branch=branch,
+                merge_parents=normalized_parent_refs[1:],
+            ),
+            rollback=lambda: None,
+        )
+    )
+    transaction.add_step(
+        TransactionStep(
+            name="write-metadata",
+            apply=lambda: metadata_manager.write(updated_metadata),
+            rollback=lambda: metadata_manager.write(metadata),
+        )
+    )
+    run_command_transaction(
+        transaction=transaction,
+        code="new-workspace-failed",
+        message="failed to create workspace",
+    )
     return destination
+
+
+def _prepare_and_add_worktree(*, cwd: Path, branch: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    _add_worktree(cwd=cwd, branch=branch, destination=destination)
+
+
+def _remove_worktree_if_exists(*, cwd: Path, destination: Path) -> None:
+    if not destination.exists():
+        return
+    result = subprocess.run(
+        ["git", "worktree", "remove", "--force", str(destination)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        raise AppError(
+            code="new-rollback-failed",
+            message="failed to rollback workspace worktree",
+            details=result.stderr.strip() or str(destination),
+        )
+
+
+def _delete_branch_if_exists(*, cwd: Path, branch: str) -> None:
+    if not _local_branch_exists(cwd=cwd, branch=branch):
+        return
+    result = subprocess.run(
+        ["git", "branch", "-D", branch],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        raise AppError(
+            code="new-rollback-failed",
+            message="failed to rollback workspace branch",
+            details=result.stderr.strip() or branch,
+        )
 
 
 def _utc_now_iso() -> str:

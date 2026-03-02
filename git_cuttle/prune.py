@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from git_cuttle.errors import AppError
+from git_cuttle.git_ops import add_worktree
 from git_cuttle.git_ops import canonical_git_dir, repo_root
 from git_cuttle.metadata_manager import (
     MetadataManager,
@@ -15,6 +16,13 @@ from git_cuttle.plan_output import (
     PlanAction,
     render_human_plan,
     render_json_plan,
+)
+from git_cuttle.transaction import Transaction, TransactionStep
+from git_cuttle.workspace_transaction import (
+    backup_refs_step,
+    cleanup_backup_refs_step,
+    rollback_restore_branch,
+    run_command_transaction,
 )
 
 PrStatus = Literal["merged", "open", "closed", "unknown", "unavailable"]
@@ -121,27 +129,10 @@ def prune_workspaces(
     if dry_run:
         return render_json_plan(plan) if json_output else render_human_plan(plan)
 
-    pruned_branches = {
-        decision.branch for decision in decisions if decision.block_reason is None
-    }
-    for decision in decisions:
-        if decision.block_reason is not None:
-            continue
-
-        if decision.worktree_path.exists():
-            _remove_worktree(
-                repo_root=repo_root_dir,
-                worktree_path=decision.worktree_path,
-                force=force,
-            )
-
-        if decision.local_branch_exists:
-            _delete_local_branch(
-                repo_root=repo_root_dir,
-                branch=decision.branch,
-                force=force,
-            )
-
+    executable_decisions = tuple(
+        decision for decision in decisions if decision.block_reason is None
+    )
+    pruned_branches = {decision.branch for decision in executable_decisions}
     if not pruned_branches:
         return None
 
@@ -153,8 +144,73 @@ def prune_workspaces(
     updated_repo = replace(repo, workspaces=updated_workspaces)
     updated_repos = dict(metadata.repos)
     updated_repos[repo_key] = updated_repo
-    metadata_manager.write(
-        WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+
+    updated_metadata = WorkspacesMetadata(version=metadata.version, repos=updated_repos)
+    transaction = Transaction()
+    backup_branches = tuple(
+        decision.branch
+        for decision in executable_decisions
+        if decision.local_branch_exists
+    )
+    if backup_branches:
+        transaction.add_step(
+            backup_refs_step(
+                repo_root=repo_root_dir,
+                transaction=transaction,
+                branches=backup_branches,
+                backup_error_code="prune-backup-failed",
+                backup_error_message="failed to create transactional backup refs for prune",
+                rollback_error_code="prune-rollback-failed",
+                rollback_error_message="failed to rollback backup refs during prune",
+            )
+        )
+
+    for decision in executable_decisions:
+        if decision.worktree_path.exists():
+            detached_oid: str | None = None
+            if not decision.local_branch_exists:
+                detached_oid = _worktree_head_oid(worktree_path=decision.worktree_path)
+            transaction.add_step(
+                _remove_worktree_step(
+                    repo_root=repo_root_dir,
+                    decision=decision,
+                    force=force,
+                    detached_oid=detached_oid,
+                )
+            )
+
+        if decision.local_branch_exists:
+            transaction.add_step(
+                _delete_branch_step(
+                    repo_root=repo_root_dir,
+                    transaction=transaction,
+                    decision=decision,
+                    force=force,
+                )
+            )
+
+    transaction.add_step(
+        TransactionStep(
+            name="write-metadata",
+            apply=lambda: metadata_manager.write(updated_metadata),
+            rollback=lambda: metadata_manager.write(metadata),
+        )
+    )
+    if backup_branches:
+        transaction.add_step(
+            cleanup_backup_refs_step(
+                repo_root=repo_root_dir,
+                transaction=transaction,
+                branches=backup_branches,
+                cleanup_error_code="prune-cleanup-failed",
+                cleanup_error_message="failed to cleanup transactional backup refs for prune",
+            )
+        )
+
+    run_command_transaction(
+        transaction=transaction,
+        code="prune-failed",
+        message="failed to prune workspaces",
     )
     return None
 
@@ -411,3 +467,104 @@ def _delete_local_branch(*, repo_root: Path, branch: str, force: bool) -> None:
             message="failed to delete workspace branch",
             details=result.stderr.strip() or branch,
         )
+
+
+def _worktree_head_oid(*, worktree_path: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=worktree_path,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _restore_pruned_worktree(
+    *,
+    repo_root: Path,
+    branch: str,
+    worktree_path: Path,
+    local_branch_exists: bool,
+    detached_oid: str | None,
+) -> None:
+    if worktree_path.exists():
+        return
+
+    if local_branch_exists:
+        try:
+            add_worktree(branch=branch, path=worktree_path, cwd=repo_root)
+            return
+        except RuntimeError as error:
+            raise AppError(
+                code="prune-rollback-failed",
+                message="failed to restore workspace worktree during prune rollback",
+                details=str(error),
+            ) from error
+
+    if detached_oid is None:
+        return
+
+    result = subprocess.run(
+        ["git", "worktree", "add", "--detach", str(worktree_path), detached_oid],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AppError(
+            code="prune-rollback-failed",
+            message="failed to restore detached workspace worktree during prune rollback",
+            details=result.stderr.strip() or detached_oid,
+        )
+
+
+def _remove_worktree_step(
+    *,
+    repo_root: Path,
+    decision: PruneDecision,
+    force: bool,
+    detached_oid: str | None,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"remove-worktree:{decision.branch}",
+        apply=lambda: _remove_worktree(
+            repo_root=repo_root,
+            worktree_path=decision.worktree_path,
+            force=force,
+        ),
+        rollback=lambda: _restore_pruned_worktree(
+            repo_root=repo_root,
+            branch=decision.branch,
+            worktree_path=decision.worktree_path,
+            local_branch_exists=decision.local_branch_exists,
+            detached_oid=detached_oid,
+        ),
+    )
+
+
+def _delete_branch_step(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    decision: PruneDecision,
+    force: bool,
+) -> TransactionStep:
+    return TransactionStep(
+        name=f"delete-branch:{decision.branch}",
+        apply=lambda: _delete_local_branch(
+            repo_root=repo_root,
+            branch=decision.branch,
+            force=force,
+        ),
+        rollback=lambda: rollback_restore_branch(
+            repo_root=repo_root,
+            transaction=transaction,
+            branch=decision.branch,
+            error_code="prune-rollback-failed",
+            message="failed to restore pruned branch from backup ref",
+        ),
+    )

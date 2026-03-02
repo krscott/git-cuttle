@@ -5,7 +5,7 @@ import pytest
 
 from git_cuttle.delete import current_branch, delete_block_reason, delete_workspace
 from git_cuttle.errors import AppError
-from git_cuttle.metadata_manager import MetadataManager
+from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
 from git_cuttle.new import create_standard_workspace
 from git_cuttle.prune import prune_candidate_for_branch, prune_reason, prune_workspaces
 
@@ -29,6 +29,14 @@ def _init_repo(path: Path) -> None:
     (path / "README.md").write_text("hello\n")
     _git(cwd=path, args=["add", "README.md"])
     _git(cwd=path, args=["commit", "-m", "init"])
+
+
+def _txn_backup_refs(*, repo: Path) -> list[str]:
+    result = _git(
+        cwd=repo,
+        args=["for-each-ref", "--format=%(refname)", "refs/gitcuttle/txn"],
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
 @pytest.mark.integration
@@ -253,6 +261,62 @@ def test_delete_force_removes_workspace_branch_and_metadata(tmp_path: Path) -> N
         "feature/delete-force"
         not in next(iter(manager.read().repos.values())).workspaces
     )
+
+
+@pytest.mark.integration
+def test_delete_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-rollback",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_write = manager.write
+    did_fail = False
+
+    def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
+        nonlocal did_fail
+        if (
+            not did_fail
+            and all(
+                "feature/delete-rollback" not in repo_meta.workspaces
+                for repo_meta in metadata.repos.values()
+            )
+        ):
+            did_fail = True
+            raise RuntimeError("simulated metadata write failure")
+        original_write(metadata)
+
+    monkeypatch.setattr(manager, "write", fail_once_when_untracking)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-rollback",
+            metadata_manager=manager,
+            force=True,
+        )
+
+    assert exc_info.value.code == "delete-workspace-failed"
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/delete-rollback"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []
 
 
 @pytest.mark.integration
@@ -668,3 +732,59 @@ def test_prune_blocks_when_branch_is_ahead_of_upstream(tmp_path: Path) -> None:
         "feature/prune-ahead"
         not in next(iter(manager.read().repos.values())).workspaces
     )
+
+
+@pytest.mark.integration
+def test_prune_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-rollback",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+    original_metadata = manager.read()
+
+    original_write = manager.write
+    did_fail = False
+
+    def fail_once_when_untracking(metadata: WorkspacesMetadata) -> None:
+        nonlocal did_fail
+        if (
+            not did_fail
+            and all(
+                "feature/prune-rollback" not in repo_meta.workspaces
+                for repo_meta in metadata.repos.values()
+            )
+        ):
+            did_fail = True
+            raise RuntimeError("simulated metadata write failure")
+        original_write(metadata)
+
+    monkeypatch.setattr(manager, "write", fail_once_when_untracking)
+
+    with pytest.raises(AppError) as exc_info:
+        prune_workspaces(
+            cwd=repo,
+            metadata_manager=manager,
+            pr_status_by_branch={"feature/prune-rollback": "merged"},
+            force=True,
+        )
+
+    assert exc_info.value.code == "prune-failed"
+    branch_result = _git(
+        cwd=repo,
+        args=["show-ref", "--verify", "--quiet", "refs/heads/feature/prune-rollback"],
+        check=False,
+    )
+    assert branch_result.returncode == 0
+    assert destination.exists()
+    assert manager.read() == original_metadata
+    assert _txn_backup_refs(repo=repo) == []
