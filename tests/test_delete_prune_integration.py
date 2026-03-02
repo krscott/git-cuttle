@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import git_cuttle.workspace_transaction as workspace_transaction
 from git_cuttle.delete import current_branch, delete_block_reason, delete_workspace
 from git_cuttle.errors import AppError
 from git_cuttle.metadata_manager import MetadataManager, WorkspacesMetadata
@@ -317,6 +318,62 @@ def test_delete_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
     assert destination.exists()
     assert manager.read() == original_metadata
     assert _txn_backup_refs(repo=repo) == []
+
+
+@pytest.mark.integration
+def test_delete_cleanup_failure_keeps_successful_deletion_and_reports_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/delete-cleanup-failure",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    def fail_cleanup(*, txn_id: str, cwd: Path) -> None:
+        raise RuntimeError("simulated cleanup failure")
+
+    monkeypatch.setattr(workspace_transaction, "remove_backup_refs", fail_cleanup)
+
+    with pytest.raises(AppError) as exc_info:
+        delete_workspace(
+            cwd=repo,
+            branch="feature/delete-cleanup-failure",
+            metadata_manager=manager,
+            force=True,
+        )
+
+    assert exc_info.value.code == "delete-cleanup-failed"
+    assert any(
+        hint.startswith("run `git update-ref -d refs/gitcuttle/txn/")
+        for hint in exc_info.value.guidance
+    )
+    assert "feature/delete-cleanup-failure" in "\n".join(exc_info.value.guidance)
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/delete-cleanup-failure",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/delete-cleanup-failure"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+    assert _txn_backup_refs(repo=repo) != []
 
 
 @pytest.mark.integration
@@ -788,3 +845,59 @@ def test_prune_rolls_back_refs_worktree_and_metadata_when_metadata_write_fails(
     assert destination.exists()
     assert manager.read() == original_metadata
     assert _txn_backup_refs(repo=repo) == []
+
+
+@pytest.mark.integration
+def test_prune_cleanup_failure_keeps_successful_prune_and_reports_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    metadata_path = tmp_path / "workspaces.json"
+    manager = MetadataManager(path=metadata_path)
+    destination = create_standard_workspace(
+        cwd=repo,
+        branch="feature/prune-cleanup-failure",
+        base_ref="main",
+        metadata_manager=manager,
+    )
+
+    def fail_cleanup(*, txn_id: str, cwd: Path) -> None:
+        raise RuntimeError("simulated cleanup failure")
+
+    monkeypatch.setattr(workspace_transaction, "remove_backup_refs", fail_cleanup)
+
+    with pytest.raises(AppError) as exc_info:
+        prune_workspaces(
+            cwd=repo,
+            metadata_manager=manager,
+            pr_status_by_branch={"feature/prune-cleanup-failure": "merged"},
+            force=True,
+        )
+
+    assert exc_info.value.code == "prune-cleanup-failed"
+    assert any(
+        hint.startswith("run `git update-ref -d refs/gitcuttle/txn/")
+        for hint in exc_info.value.guidance
+    )
+    assert "feature/prune-cleanup-failure" in "\n".join(exc_info.value.guidance)
+
+    branch_result = _git(
+        cwd=repo,
+        args=[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/feature/prune-cleanup-failure",
+        ],
+        check=False,
+    )
+    assert branch_result.returncode != 0
+    assert not destination.exists()
+    assert (
+        "feature/prune-cleanup-failure"
+        not in next(iter(manager.read().repos.values())).workspaces
+    )
+    assert _txn_backup_refs(repo=repo) != []

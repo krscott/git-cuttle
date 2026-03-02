@@ -105,6 +105,38 @@ def cleanup_backup_refs_step(
     )
 
 
+def cleanup_backup_refs_post_commit(
+    *,
+    repo_root: Path,
+    transaction: Transaction,
+    branches: Iterable[str],
+    cleanup_error_code: str,
+    cleanup_error_message: str,
+) -> None:
+    unique_branches = tuple(dict.fromkeys(branches))
+    if not unique_branches:
+        return
+
+    try:
+        _remove_backup_refs(
+            repo_root=repo_root,
+            txn_id=transaction.txn_id,
+            error_code=cleanup_error_code,
+            error_message=cleanup_error_message,
+        )
+    except AppError as error:
+        recovery_commands = tuple(
+            _delete_backup_ref_command(txn_id=transaction.txn_id, branch=branch)
+            for branch in unique_branches
+        )
+        raise AppError(
+            code=error.code,
+            message=error.message,
+            details=error.details,
+            guidance=tuple(f"run `{command}`" for command in recovery_commands),
+        ) from error
+
+
 def rollback_restore_branch(
     *,
     repo_root: Path,

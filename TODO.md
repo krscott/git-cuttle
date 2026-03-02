@@ -5,7 +5,7 @@ implementation work and user-visible automated test coverage.
 
 ## Stories
 
-- [ ] [P1] Story: Enforce `DESIGN.md` metadata-last ordering in transactional delete/prune flows.
+- [x] [P1] Story: Enforce `DESIGN.md` metadata-last ordering in transactional delete/prune flows.
   `DESIGN.md` minimum rollback contract states metadata writes MUST be last after
   git ref/worktree mutations. `git_cuttle/delete.py` and `git_cuttle/prune.py`
   currently run backup-ref cleanup after `write-metadata`, which is another ref

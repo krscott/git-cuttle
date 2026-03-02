@@ -20,7 +20,7 @@ from git_cuttle.plan_output import (
 from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_transaction import (
     backup_refs_step,
-    cleanup_backup_refs_step,
+    cleanup_backup_refs_post_commit,
     rollback_restore_branch,
     run_command_transaction,
 )
@@ -196,21 +196,17 @@ def prune_workspaces(
             rollback=lambda: metadata_manager.write(metadata),
         )
     )
-    if backup_branches:
-        transaction.add_step(
-            cleanup_backup_refs_step(
-                repo_root=repo_root_dir,
-                transaction=transaction,
-                branches=backup_branches,
-                cleanup_error_code="prune-cleanup-failed",
-                cleanup_error_message="failed to cleanup transactional backup refs for prune",
-            )
-        )
-
     run_command_transaction(
         transaction=transaction,
         code="prune-failed",
         message="failed to prune workspaces",
+    )
+    cleanup_backup_refs_post_commit(
+        repo_root=repo_root_dir,
+        transaction=transaction,
+        branches=backup_branches,
+        cleanup_error_code="prune-cleanup-failed",
+        cleanup_error_message="failed to cleanup transactional backup refs for prune",
     )
     return None
 

@@ -16,7 +16,7 @@ from git_cuttle.plan_output import (
 from git_cuttle.transaction import Transaction, TransactionStep
 from git_cuttle.workspace_transaction import (
     backup_refs_step,
-    cleanup_backup_refs_step,
+    cleanup_backup_refs_post_commit,
     rollback_restore_branch,
     run_command_transaction,
 )
@@ -224,19 +224,17 @@ def delete_workspace(
             rollback=lambda: metadata_manager.write(metadata),
         )
     )
-    transaction.add_step(
-        cleanup_backup_refs_step(
-            repo_root=repo_root_dir,
-            transaction=transaction,
-            branches=(branch,),
-            cleanup_error_code="delete-cleanup-failed",
-            cleanup_error_message="failed to cleanup transactional backup refs for delete",
-        )
-    )
     run_command_transaction(
         transaction=transaction,
         code="delete-workspace-failed",
         message="failed to delete workspace",
+    )
+    cleanup_backup_refs_post_commit(
+        repo_root=repo_root_dir,
+        transaction=transaction,
+        branches=(branch,),
+        cleanup_error_code="delete-cleanup-failed",
+        cleanup_error_message="failed to cleanup transactional backup refs for delete",
     )
     return None
 
