@@ -155,6 +155,10 @@ def create_standard_workspace(
                 cwd=repo_root_dir,
                 destination=destination,
             ),
+            recovery_commands=(
+                f"git worktree unlock {destination}",
+                f"git worktree remove --force {destination}",
+            ),
         )
     )
     transaction.add_step(
@@ -261,6 +265,10 @@ def create_octopus_workspace(
             rollback=lambda: _remove_worktree_if_exists(
                 cwd=repo_root_dir,
                 destination=destination,
+            ),
+            recovery_commands=(
+                f"git worktree unlock {destination}",
+                f"git worktree remove --force {destination}",
             ),
         )
     )

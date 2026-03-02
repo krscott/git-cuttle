@@ -13,7 +13,7 @@ implementation work and user-visible automated test coverage.
   cleanup semantics) so metadata is truly the final state mutation while still
   preserving deterministic rollback and recovery behavior.
 
-- [ ] [P1] Story: Guarantee deterministic manual recovery commands for worktree-rollback failures.
+- [x] [P1] Story: Guarantee deterministic manual recovery commands for worktree-rollback failures.
   `DESIGN.md` requires deterministic recovery commands whenever rollback is
   partial. In `new`/`delete`/`prune`, rollback failures in worktree restoration
   steps can currently surface without step-specific recovery commands. Add

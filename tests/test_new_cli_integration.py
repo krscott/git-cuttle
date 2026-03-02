@@ -205,3 +205,61 @@ def test_cli_new_invalid_base_ref_shows_actionable_hint(tmp_path: pathlib.Path) 
     assert "error[invalid-base-ref]: base ref does not exist" in result.stderr
     assert "details: missing/base" in result.stderr
     assert "hint: pass a valid local branch, tag, or commit" in result.stderr
+
+
+@pytest.mark.integration
+def test_cli_new_reports_worktree_recovery_when_rollback_is_partial(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    xdg_data_home = tmp_path / "xdg"
+    env = os.environ.copy()
+    env["XDG_DATA_HOME"] = str(xdg_data_home)
+
+    metadata_manager = MetadataManager(
+        path=xdg_data_home / "gitcuttle" / "workspaces.json"
+    )
+    metadata_manager.ensure_repo_tracked(cwd=repo)
+
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    marker_path = tmp_path / "new-rollback-hook-done"
+    metadata_dir = xdg_data_home / "gitcuttle"
+    post_checkout = hooks_dir / "post-checkout"
+    post_checkout.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        f"if [ -f '{marker_path}' ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        f"touch '{marker_path}'\n"
+        "git worktree lock \"$PWD\"\n"
+        f"chmod 500 '{metadata_dir}'\n"
+    )
+    post_checkout.chmod(0o755)
+    subprocess.run(
+        ["git", "config", "core.hooksPath", str(hooks_dir)],
+        check=True,
+        cwd=repo,
+    )
+
+    result = subprocess.run(
+        ["gitcuttle", "new", "-b", "feature/new-worktree-rollback", "--destination"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+        env=env,
+    )
+
+    assert result.returncode == 2
+    assert (
+        "error[transaction-rollback-failed]: operation failed and automatic rollback was partial"
+        in result.stderr
+    )
+    assert "rollback failures:" in result.stderr
+    assert "deterministic recovery commands:" in result.stderr
+    assert "git worktree unlock " in result.stderr
+    assert "git worktree remove --force " in result.stderr

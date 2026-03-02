@@ -525,6 +525,16 @@ def _remove_worktree_step(
     force: bool,
     detached_oid: str | None,
 ) -> TransactionStep:
+    recovery_commands: tuple[str, ...] = ()
+    if decision.local_branch_exists:
+        recovery_commands = (
+            f"git worktree add {decision.worktree_path} {decision.branch}",
+        )
+    elif detached_oid is not None:
+        recovery_commands = (
+            f"git worktree add --detach {decision.worktree_path} {detached_oid}",
+        )
+
     return TransactionStep(
         name=f"remove-worktree:{decision.branch}",
         apply=lambda: _remove_worktree(
@@ -539,6 +549,7 @@ def _remove_worktree_step(
             local_branch_exists=decision.local_branch_exists,
             detached_oid=detached_oid,
         ),
+        recovery_commands=recovery_commands,
     )
 
 

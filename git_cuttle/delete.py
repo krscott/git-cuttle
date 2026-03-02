@@ -198,6 +198,9 @@ def delete_workspace(
                     branch=branch,
                     worktree_path=workspace.worktree_path,
                 ),
+                recovery_commands=(
+                    f"git worktree add {workspace.worktree_path} {branch}",
+                ),
             )
         )
     transaction.add_step(
